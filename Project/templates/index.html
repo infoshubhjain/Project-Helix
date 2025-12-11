@@ -39,7 +39,9 @@
             <h2>Your Calendar</h2>
             <div class="calendar-actions">
               <button id="refresh-calendar-btn" class="refresh-btn">🔄 Refresh</button>
+              {% if email_parsing_enabled %}
               <button id="add-email">📧 Add from Email</button>
+              {% endif %}
               <button id="add-event">+ Add Event</button>
             </div>
           </div>
@@ -176,12 +178,11 @@
     </div>
   </div>
 
-  <!-- Configuration Script - REPLACE WITH YOUR CREDENTIALS -->
+  <!-- Configuration Script - YOUR CREDENTIALS -->
   <script>
-    // TODO: Replace these with your actual Google API credentials
-    // Get them from: https://console.cloud.google.com/
-    const GOOGLE_CLIENT_ID = '985871831044-dao07nebhsmstom8althg48hfrg97oeo.apps.googleusercontent.com';
-    const GOOGLE_API_KEY = 'AIzaSyA7uXknS3AhXWG5IpcfdnI2eNo6-6hcmMA';
+    // Your Google API credentials from credentials.json
+    const GOOGLE_CLIENT_ID = '691968245686-5cdnqs5inasr62td91id893m70lg3k09.apps.googleusercontent.com';
+    const GOOGLE_API_KEY = 'AIzaSyD3ZFca0_TgjnstevpbHfo1BNtEWtwlAO4';
   </script>
 
   <!-- Toast Notification Container -->

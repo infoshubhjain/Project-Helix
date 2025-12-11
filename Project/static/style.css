@@ -335,6 +335,7 @@ header h1 {
   border: 3px solid #E84A27;
   padding: 32px;
   box-shadow: var(--shadow-md);
+  grid-column: 1 / -1; /* Span full width to match calendar sections above */
 }
 
 /* ========== EMAIL EVENTS SECTION ========== */

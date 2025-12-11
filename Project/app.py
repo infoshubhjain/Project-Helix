@@ -23,19 +23,25 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# Get environment variables for Microsoft auth
+# Get environment variables for Microsoft auth (optional - only needed for email parsing)
 TENANT_ID = os.getenv("TENANT_ID")
 CLIENT_ID = os.getenv("CLIENT_ID")
+
+# Check if email parsing is enabled (requires Azure AD credentials)
+EMAIL_PARSING_ENABLED = bool(TENANT_ID and CLIENT_ID)
 
 # Loads the home page
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", email_parsing_enabled=EMAIL_PARSING_ENABLED)
 
 # Email processing endpoints
 @app.route("/api/process_emails", methods=["POST"])
 def process_emails():
     """Fetch emails, parse them, and return events (no Firebase storage)"""
+    if not EMAIL_PARSING_ENABLED:
+        return jsonify({"error": "Email parsing is disabled. Configure TENANT_ID and CLIENT_ID in .env to enable."}), 503
+
     try:
         data = request.json
         amount = data.get("amount", 5)
@@ -82,6 +88,9 @@ def process_emails():
 @app.route("/api/process_emails_stream", methods=["GET"])
 def process_emails_stream():
     """Fetch and parse emails with streaming updates"""
+    if not EMAIL_PARSING_ENABLED:
+        return jsonify({"error": "Email parsing is disabled. Configure TENANT_ID and CLIENT_ID in .env to enable."}), 503
+
     import json
 
     # Get amount from request BEFORE the generator (must be in request context)
@@ -167,4 +176,5 @@ def format_email_event(event):
     }
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Use port 5001 to avoid conflict with macOS AirPlay Receiver on port 5000
+    app.run(debug=True, port=5001)
