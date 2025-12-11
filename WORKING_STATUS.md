@@ -1,4 +1,4 @@
-# EventFlow - Working Status Report
+# Project Helix - Working Status Report
 
 ## ✅ What's Working (7/8 Tests Passed)
 
@@ -133,7 +133,7 @@ python3 /Users/shubh/Desktop/Project-Helix/test_app.py
 When you open http://localhost:5000, you'll see:
 
 ### Header:
-- EventFlow @ Illinois logo
+- Project Helix @ Illinois logo
 - "Connect Your Google Calendar" button (grayed out until you add credentials.json)
 
 ### Main Sections:

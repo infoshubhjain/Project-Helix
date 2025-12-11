@@ -1,4 +1,4 @@
-# EventFlow - Quick Start Guide
+# Project Helix - Quick Start Guide
 
 ## Prerequisites Check
 - [ ] Python 3.8+ installed (`python3 --version`)
@@ -66,7 +66,7 @@ Navigate to: **http://localhost:5000**
 
 2. Press `F5` or click "Run and Debug"
 
-3. Select **"Flask: Run EventFlow App"**
+3. Select **"Flask: Run Project Helix App"**
 
 4. The app will start with debugging enabled
 

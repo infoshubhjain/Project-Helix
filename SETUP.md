@@ -1,7 +1,7 @@
-# Project Helix - EventFlow Setup Guide
+# Project Helix - Project Helix Setup Guide
 
 ## Overview
-Project Helix (EventFlow) is a Flask-based campus event aggregation web application that scrapes events from 15+ university sources and displays them in an interactive calendar interface with email parsing capabilities.
+Project Helix (Project Helix) is a Flask-based campus event aggregation web application that scrapes events from 15+ university sources and displays them in an interactive calendar interface with email parsing capabilities.
 
 ## Prerequisites
 
@@ -82,7 +82,7 @@ If you need to change Firebase settings, edit `browse-events.js` (lines 12-21).
 ### Option 1: VS Code Launch Configuration (Recommended)
 1. Open the project in VS Code
 2. Press `F5` or go to Run and Debug
-3. Select **"Flask: Run EventFlow App"**
+3. Select **"Flask: Run Project Helix App"**
 4. Access the app at `http://localhost:5000`
 
 ### Option 2: Command Line
@@ -254,4 +254,4 @@ For issues or questions:
 
 ## License
 
-Copyright © 2025 EventFlow
+Copyright © 2025 Project Helix

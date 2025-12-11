@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# EventFlow - Quick Run Script
+# Project Helix - Quick Run Script
 # This script starts the Flask development server
 
-echo "Starting EventFlow..."
+echo "Starting Project Helix..."
 echo ""
 
 # Check if port 5001 is in use

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EventFlow - Comprehensive Test Script
+Project Helix - Comprehensive Test Script
 Tests all components of the application
 """
 
@@ -230,7 +230,7 @@ def test_playwright():
 
 def run_all_tests():
     """Run all tests"""
-    print(f"\n{Colors.BOLD}EventFlow - System Test{Colors.END}")
+    print(f"\n{Colors.BOLD}Project Helix - System Test{Colors.END}")
     print(f"{Colors.BOLD}Testing your installation...{Colors.END}\n")
 
     results = {}

@@ -49,7 +49,7 @@ http://localhost:5001
 
 ## 🌐 In Your Browser:
 
-1. **You'll see the EventFlow homepage**
+1. **You'll see the Project Helix homepage**
    - Header with logo
    - "Connect Your Google Calendar" button (you can skip this)
    - Three main sections

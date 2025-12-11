@@ -55,7 +55,7 @@ If Option 1 doesn't work, create proper Web Application credentials:
 ### Step 2: Create New Credentials
 1. Click **"+ CREATE CREDENTIALS"** → **"OAuth client ID"**
 2. **Application type**: Select **"Web application"** (NOT Desktop app!)
-3. **Name**: "EventFlow Web Client"
+3. **Name**: "Project Helix Web Client"
 
 ### Step 3: Configure Web Application
 Under **"Authorized JavaScript origins"**, add:

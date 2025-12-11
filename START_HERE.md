@@ -1,4 +1,4 @@
-# 🎉 EventFlow - Start Here!
+# 🎉 Project Helix - Start Here!
 
 ## What You Have Now
 

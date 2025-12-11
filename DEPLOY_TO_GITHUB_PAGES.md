@@ -1,6 +1,6 @@
-# 🚀 Deploy EventFlow to GitHub Pages
+# 🚀 Deploy Project Helix to GitHub Pages
 
-This guide will help you deploy your EventFlow app to GitHub Pages so it's accessible at `https://infoshubhjain.github.io/Project-Helix/`
+This guide will help you deploy your Project Helix app to GitHub Pages so it's accessible at `https://infoshubhjain.github.io/Project-Helix/`
 
 ## 📋 Prerequisites
 

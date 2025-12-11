@@ -38,7 +38,7 @@ Once connected, you can:
 2. **Click the dropdown** → Click **"NEW PROJECT"** in the top-right corner
 
 3. **Fill in the project details:**
-   - **Project name**: `EventFlow` (or any name you like)
+   - **Project name**: `Project Helix` (or any name you like)
    - **Organization**: Leave as "No organization" (unless you have one)
    - **Location**: Leave as default
 
@@ -78,7 +78,7 @@ This tells Google what your app is and who can use it.
    - Click **"CREATE"**
 
 3. **Fill in OAuth consent screen (Page 1):**
-   - **App name**: `EventFlow` or `UIUC Calendar App`
+   - **App name**: `Project Helix` or `UIUC Calendar App`
    - **User support email**: Select your email from dropdown
    - **App logo**: Leave blank (optional)
    - **App domain**: Leave blank
@@ -120,7 +120,7 @@ Now we'll create the credentials.json file that the app needs.
 
 4. **Configure the OAuth client:**
    - **Application type**: Select **"Desktop app"** from dropdown
-   - **Name**: `EventFlow Desktop Client` (or any name)
+   - **Name**: `Project Helix Desktop Client` (or any name)
 
 5. **Click "CREATE"**
 
@@ -182,7 +182,7 @@ Now we'll create the credentials.json file that the app needs.
 
 ### Step 8: Connect Your Calendar
 
-1. **In the EventFlow app**, look at the **top-right corner**
+1. **In the Project Helix app**, look at the **top-right corner**
 
 2. **Click the button:** "🔗 Connect Your Google Calendar"
 
@@ -194,10 +194,10 @@ Now we'll create the credentials.json file that the app needs.
    - "Google hasn't verified this app"
    - This is NORMAL - it's your own app
    - Click **"Advanced"** (small text at bottom)
-   - Click **"Go to EventFlow (unsafe)"**
+   - Click **"Go to Project Helix (unsafe)"**
 
 5. **Grant permissions:**
-   - Google will ask: "EventFlow wants to access your Google Account"
+   - Google will ask: "Project Helix wants to access your Google Account"
    - Review the permissions (it will show Calendar access)
    - Click **"Continue"** or **"Allow"**
 
@@ -254,7 +254,7 @@ This is **NORMAL**! It's your own app running locally.
 
 **To proceed:**
 1. Click "Advanced" at the bottom
-2. Click "Go to EventFlow (unsafe)"
+2. Click "Go to Project Helix (unsafe)"
 3. This is safe because it's YOUR app on YOUR computer
 
 ---

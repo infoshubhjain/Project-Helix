@@ -25,7 +25,7 @@
 2️⃣  CREATE PROJECT:
     → Click project dropdown at top
     → "NEW PROJECT"
-    → Name: "EventFlow"
+    → Name: "Project Helix"
     → CREATE
 
 3️⃣  ENABLE API:
@@ -36,7 +36,7 @@
 4️⃣  OAUTH CONSENT:
     → Left sidebar: OAuth consent screen
     → External → CREATE
-    → App name: "EventFlow"
+    → App name: "Project Helix"
     → Your email (support + developer contact)
     → SAVE AND CONTINUE
     → Add scope: calendar (full calendar access)
@@ -48,7 +48,7 @@
 5️⃣  CREATE CREDENTIALS:
     → Left sidebar: Credentials
     → + CREATE CREDENTIALS → OAuth client ID
-    → Desktop app → Name: "EventFlow"
+    → Desktop app → Name: "Project Helix"
     → CREATE → DOWNLOAD JSON
 
 6️⃣  INSTALL FILE:
@@ -74,7 +74,7 @@ ls -la /Users/shubh/Desktop/Project-Helix/Project/calander/credentials.json
 2. Open: http://localhost:5001
 3. Click: "🔗 Connect Your Google Calendar" (top-right)
 4. Choose Google account
-5. Click "Advanced" → "Go to EventFlow (unsafe)"
+5. Click "Advanced" → "Go to Project Helix (unsafe)"
    (This is YOUR app - it's safe!)
 6. Click "Allow"
 7. Done! See "✅ Connected" message
@@ -92,7 +92,7 @@ ls -la /Users/shubh/Desktop/Project-Helix/Project/calander/credentials.json
 ✅ CHECKLIST:
 
 □ Visited Google Cloud Console
-□ Created "EventFlow" project
+□ Created "Project Helix" project
 □ Enabled Google Calendar API
 □ Set up OAuth consent screen
 □ Added myself as test user

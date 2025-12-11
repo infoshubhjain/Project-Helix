@@ -1,4 +1,4 @@
-# EventFlow - Credentials Setup Guide
+# Project Helix - Credentials Setup Guide
 
 This guide provides detailed, step-by-step instructions for obtaining all required API credentials.
 
@@ -27,7 +27,7 @@ These credentials allow the app to read emails from your Microsoft Outlook accou
 4. Click **"+ New registration"** at the top
 
 #### Step 3: Configure Application Registration
-1. **Name**: Enter a name like `EventFlow Email Parser` or `UIUC EventFlow`
+1. **Name**: Enter a name like `Project Helix Email Parser` or `UIUC Project Helix`
 2. **Supported account types**: Select **"Accounts in any organizational directory (Any Azure AD directory - Multitenant) and personal Microsoft accounts"**
    - This allows both university and personal Microsoft accounts
 3. **Redirect URI**:
@@ -52,7 +52,7 @@ After registration, you'll see the "Overview" page:
 1. In the left sidebar, click **"Certificates & secrets"**
 2. Click the **"Client secrets"** tab
 3. Click **"+ New client secret"**
-4. **Description**: Enter something like `EventFlow Secret`
+4. **Description**: Enter something like `Project Helix Secret`
 5. **Expires**: Select **"24 months"** (or your preferred duration)
 6. Click **"Add"**
 7. **IMPORTANT**: Immediately copy the **"Value"** (not the "Secret ID")
@@ -119,7 +119,7 @@ This allows the app to use AI to intelligently parse events from email content.
 1. After adding credits, click your profile icon again
 2. Click **"API Keys"** or **"Keys"**
 3. Click **"+ Create Key"** or **"Generate New Key"**
-4. **Name**: Enter something like `EventFlow Parser`
+4. **Name**: Enter something like `Project Helix Parser`
 5. **Rate Limit** (optional): Leave blank or set to reasonable limits
 6. Click **"Create"**
 7. **Copy the API key**:
@@ -162,7 +162,7 @@ This allows the app to read/write to your Google Calendar and display your perso
 #### Step 2: Create a New Project
 1. At the top, click the project dropdown (says "Select a project" or shows current project name)
 2. Click **"NEW PROJECT"** in the top right of the popup
-3. **Project name**: Enter `EventFlow` or `UIUC Calendar App`
+3. **Project name**: Enter `Project Helix` or `UIUC Calendar App`
 4. **Organization**: Leave as "No organization" (unless you have one)
 5. Click **"CREATE"**
 6. Wait a few seconds for the project to be created
@@ -181,7 +181,7 @@ This allows the app to read/write to your Google Calendar and display your perso
 2. Choose **"External"** user type
 3. Click **"CREATE"**
 4. Fill in the required fields:
-   - **App name**: `EventFlow` or `UIUC Calendar App`
+   - **App name**: `Project Helix` or `UIUC Calendar App`
    - **User support email**: Your email address (select from dropdown)
    - **Developer contact information**: Your email address
 5. Leave everything else as default
@@ -202,7 +202,7 @@ This allows the app to read/write to your Google Calendar and display your perso
 2. Click **"+ CREATE CREDENTIALS"** at the top
 3. Select **"OAuth client ID"**
 4. **Application type**: Select **"Desktop app"**
-5. **Name**: Enter `EventFlow Desktop Client`
+5. **Name**: Enter `Project Helix Desktop Client`
 6. Click **"CREATE"**
 7. A popup will appear saying "OAuth client created"
 

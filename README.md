@@ -1,4 +1,4 @@
-# Project Helix - EventFlow @ UIUC
+# Project Helix @ UIUC
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/Flask-3.1.2-green.svg)](https://flask.palletsprojects.com/)
@@ -6,9 +6,9 @@
 
 > A comprehensive campus event aggregation platform for UIUC students
 
-## 🎯 What is EventFlow?
+## 🎯 What is Project Helix?
 
-EventFlow is a Flask-based web application that:
+Project Helix is a Flask-based web application that:
 - 📅 **Aggregates 1000+ campus events** from 15+ UIUC sources
 - 📧 **Parses emails** using AI to find event information
 - 🗓️ **Syncs with Google Calendar** for personal event management
@@ -72,7 +72,7 @@ Open http://localhost:5000
 
 ## 🔑 Required Credentials (Optional Features)
 
-EventFlow works out of the box for browsing events, but requires credentials for advanced features:
+Project Helix works out of the box for browsing events, but requires credentials for advanced features:
 
 | Feature | Required Credentials | Cost | Guide |
 |---------|---------------------|------|-------|
@@ -146,7 +146,7 @@ Project-Helix/
 
 ## 🔍 Event Sources
 
-EventFlow scrapes from:
+Project Helix scrapes from:
 - 10 calendars.illinois.edu sources (general campus events)
 - State Farm Center (concerts, shows)
 - 4 Fighting Illini athletics schedules
@@ -192,7 +192,7 @@ git push origin main
 ### VS Code Debugging
 1. Open project in VS Code
 2. Press `F5`
-3. Select "Flask: Run EventFlow App"
+3. Select "Flask: Run Project Helix App"
 
 ## 🐛 Troubleshooting
 
@@ -249,7 +249,7 @@ This is an academic project for UIUC students. Contributions welcome!
 
 ## 📄 License
 
-Copyright © 2025 EventFlow
+Copyright © 2025 Project Helix
 
 ## 👥 Team
 

@@ -1,4 +1,4 @@
-# EventFlow - Simple Setup (No Email Parsing)
+# Project Helix - Simple Setup (No Email Parsing)
 
 ## What You'll Get
 ✅ Browse 1000+ scraped campus events
@@ -30,7 +30,7 @@ This allows the app to connect to your Google Calendar.
 #### B. Create a Project
 1. Click the project dropdown at the top
 2. Click **"NEW PROJECT"**
-3. Name it: `EventFlow`
+3. Name it: `Project Helix`
 4. Click **"CREATE"**
 5. Wait a few seconds, then select your new project from the dropdown
 
@@ -44,7 +44,7 @@ This allows the app to connect to your Google Calendar.
 2. Choose **"External"**
 3. Click **"CREATE"**
 4. Fill in:
-   - **App name**: `EventFlow`
+   - **App name**: `Project Helix`
    - **User support email**: Your email (from dropdown)
    - **Developer contact**: Your email
 5. Click **"SAVE AND CONTINUE"**
@@ -60,7 +60,7 @@ This allows the app to connect to your Google Calendar.
 1. Left sidebar → **"Credentials"**
 2. Click **"+ CREATE CREDENTIALS"** → **"OAuth client ID"**
 3. **Application type**: Select **"Desktop app"**
-4. **Name**: `EventFlow Desktop`
+4. **Name**: `Project Helix Desktop`
 5. Click **"CREATE"**
 6. Click **"DOWNLOAD JSON"** in the popup
 7. Rename the downloaded file to `credentials.json`

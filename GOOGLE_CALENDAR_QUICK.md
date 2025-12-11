@@ -4,12 +4,12 @@
 
 ### 1. Google Cloud Console
 - Go to: https://console.cloud.google.com/
-- Create new project: "EventFlow"
+- Create new project: "Project Helix"
 - Enable "Google Calendar API"
 
 ### 2. OAuth Consent Screen
 - Choose "External"
-- Fill in app name: "EventFlow"
+- Fill in app name: "Project Helix"
 - Add scope: `https://www.googleapis.com/auth/calendar`
 - Add yourself as test user
 
@@ -64,7 +64,7 @@ mv ~/Downloads/credentials.json /Users/shubh/Desktop/Project-Helix/Project/calan
 Use this to track your progress:
 
 - [ ] Visited Google Cloud Console
-- [ ] Created project named "EventFlow"
+- [ ] Created project named "Project Helix"
 - [ ] Enabled Google Calendar API
 - [ ] Configured OAuth consent screen
 - [ ] Added myself as test user
@@ -161,7 +161,7 @@ It has:
 → Check file is at: `Project/calander/credentials.json`
 
 ### Error: "This app isn't verified"
-→ Click "Advanced" → "Go to EventFlow (unsafe)"
+→ Click "Advanced" → "Go to Project Helix (unsafe)"
 → This is normal for your own app!
 
 ### Calendar not showing

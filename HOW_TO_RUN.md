@@ -1,4 +1,4 @@
-# How to Run EventFlow
+# How to Run Project Helix
 
 ## 🚀 Quick Start
 
@@ -21,7 +21,7 @@ Then open: **http://localhost:5001**
 ### Method 3: VS Code (For debugging)
 1. Open the project in VS Code
 2. Press `F5`
-3. Select "Flask: Run EventFlow App"
+3. Select "Flask: Run Project Helix App"
 4. Open: **http://localhost:5001**
 
 ---
@@ -34,7 +34,7 @@ Then open: **http://localhost:5001**
 
 ### First Time Opening
 1. The app will start on http://localhost:5001
-2. You'll see the EventFlow interface
+2. You'll see the Project Helix interface
 3. Scroll down to "Browse Events Near UIUC" to see events
 4. Events load automatically from Firebase
 
@@ -43,7 +43,7 @@ Then open: **http://localhost:5001**
 ## 🎯 What You'll See
 
 ### Header Section:
-- EventFlow @ Illinois logo
+- Project Helix @ Illinois logo
 - "Connect Your Google Calendar" button (optional)
 
 ### Main Sections:
@@ -113,7 +113,7 @@ If you really want to use port 5000:
 
 ### Test 1: Home Page Loads
 - Open http://localhost:5001
-- Should see EventFlow interface
+- Should see Project Helix interface
 - No errors in browser console
 
 ### Test 2: Browse Events Works
