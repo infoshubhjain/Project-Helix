@@ -4,10 +4,24 @@ let tokenClient;
 let gapiInited = false;
 let gisInited = false;
 
+// LocalStorage keys for token persistence
+const TOKEN_STORAGE_KEY = 'google_calendar_token';
+const TOKEN_EXPIRY_KEY = 'google_calendar_token_expiry';
+
+// Configuration: How long before token expiry should we refresh? (in minutes)
+// Default: 5 minutes before expiry
+const REFRESH_BEFORE_EXPIRY_MINUTES = 5;
+
+// Note: Google access tokens typically last 1 hour (3600 seconds)
+// With auto-refresh enabled, your session can last indefinitely as long as:
+// 1. You keep the browser tab open, OR
+// 2. You return to the page before the token expires
+// If you're logged into Google, refreshes happen silently without prompting you!
+
 // Wait for page to load
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🔄 Starting Google Calendar initialization...');
-    
+
     // Wait a bit for Google libraries to load
     setTimeout(initializeGoogleCalendar, 1000);
 });
@@ -78,6 +92,8 @@ function initGisClient() {
             client_id: GOOGLE_CLIENT_ID,
             scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events',
             callback: '', // Will be set during request
+            // Enable automatic token refresh and longer sessions
+            prompt: '',  // Don't prompt every time
         });
         gisInited = true;
         console.log('✅ Google Identity Services initialized');
@@ -111,7 +127,116 @@ function checkIfReady() {
         if (refreshBtn) {
             refreshBtn.onclick = handleRefreshClick;
         }
+
+        // Try to restore saved token
+        restoreTokenFromStorage();
     }
+}
+
+// Save token to localStorage
+function saveTokenToStorage(token) {
+    try {
+        localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(token));
+        // Calculate expiry time (tokens typically last 1 hour = 3600 seconds)
+        const expiryTime = Date.now() + (token.expires_in || 3600) * 1000;
+        localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
+        console.log('💾 Token saved to localStorage');
+    } catch (error) {
+        console.error('❌ Error saving token:', error);
+    }
+}
+
+// Restore token from localStorage
+function restoreTokenFromStorage() {
+    try {
+        const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+        const expiryTime = localStorage.getItem(TOKEN_EXPIRY_KEY);
+
+        if (!savedToken || !expiryTime) {
+            console.log('📭 No saved token found');
+            return;
+        }
+
+        // Check if token is expired
+        const now = Date.now();
+        const expiry = parseInt(expiryTime);
+
+        if (now >= expiry) {
+            console.log('⏰ Saved token expired, clearing...');
+            clearStoredToken();
+            return;
+        }
+
+        const token = JSON.parse(savedToken);
+
+        // Set the token in GAPI
+        gapi.client.setToken(token);
+        console.log('✅ Token restored from localStorage');
+
+        // Calculate time until expiry
+        const timeUntilExpiry = expiry - now;
+        const minutesUntilExpiry = Math.floor(timeUntilExpiry / 1000 / 60);
+        console.log(`⏱️ Token expires in ${minutesUntilExpiry} minutes`);
+
+        // Set up auto-refresh before token expires
+        const refreshTimeMs = REFRESH_BEFORE_EXPIRY_MINUTES * 60 * 1000;
+        if (timeUntilExpiry > refreshTimeMs) {
+            setTimeout(() => {
+                console.log('⏰ Token expiring soon, attempting silent refresh...');
+                silentlyRefreshToken();
+            }, timeUntilExpiry - refreshTimeMs);
+        }
+
+        // Update UI to show connected state
+        onCalendarConnected();
+    } catch (error) {
+        console.error('❌ Error restoring token:', error);
+        clearStoredToken();
+    }
+}
+
+// Clear stored token
+function clearStoredToken() {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+    console.log('🗑️ Cleared stored token');
+}
+
+// Silently refresh token without user interaction
+function silentlyRefreshToken() {
+    if (!tokenClient) {
+        console.error('❌ Token client not initialized');
+        return;
+    }
+
+    console.log('🔄 Attempting silent token refresh...');
+
+    tokenClient.callback = async (response) => {
+        if (response.error !== undefined) {
+            console.error('❌ Silent refresh failed:', response.error);
+            showNotification('Your session expired. Please reconnect to Google Calendar.', 'warning');
+            clearStoredToken();
+            onCalendarDisconnected();
+            return;
+        }
+
+        console.log('✅ Token silently refreshed');
+        saveTokenToStorage(response);
+        showNotification('Session refreshed successfully!', 'success');
+
+        // Set up next refresh cycle
+        const expiryTime = parseInt(localStorage.getItem(TOKEN_EXPIRY_KEY));
+        const timeUntilExpiry = expiryTime - Date.now();
+        const refreshTimeMs = REFRESH_BEFORE_EXPIRY_MINUTES * 60 * 1000;
+        if (timeUntilExpiry > refreshTimeMs) {
+            setTimeout(() => {
+                silentlyRefreshToken();
+            }, timeUntilExpiry - refreshTimeMs);
+        }
+    };
+
+    // Request new token silently (no user interaction if they're still logged in to Google)
+    tokenClient.requestAccessToken({ prompt: '' });
 }
 
 function handleRefreshClick() {
@@ -144,8 +269,12 @@ function handleConnectClick() {
             alert('Failed to connect to Google Calendar. Please try again.');
             return;
         }
-        
+
         console.log('✅ Successfully authenticated');
+
+        // Save the token to localStorage
+        saveTokenToStorage(response);
+
         await onCalendarConnected();
     };
 
@@ -166,7 +295,10 @@ function handleDisconnectClick() {
         });
         gapi.client.setToken('');
     }
-    
+
+    // Clear stored token from localStorage
+    clearStoredToken();
+
     onCalendarDisconnected();
 }
 
@@ -319,8 +451,26 @@ function escapeHtml(text) {
 
 // Notification helper
 function showNotification(message, type = 'info') {
-    // You can implement a toast notification here
     console.log(`[${type.toUpperCase()}] ${message}`);
+
+    // Create toast notification
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+
+    container.appendChild(toast);
+
+    // Show toast
+    setTimeout(() => toast.classList.add('show'), 10);
+
+    // Auto-hide after 4 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
 }
 
 // Export functions for use in other scripts

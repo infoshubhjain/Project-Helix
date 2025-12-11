@@ -976,9 +976,17 @@ footer {
   display: flex;
   align-items: center;
   gap: 12px;
-  animation: slideDown 0.3s ease-out;
+  opacity: 0;
+  transform: translateY(-20px);
+  transition: all 0.3s ease-out;
   pointer-events: auto;
   border-left: 4px solid var(--primary);
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+  animation: slideDown 0.3s ease-out;
 }
 
 .toast.success {

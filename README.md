@@ -152,6 +152,16 @@ EventFlow scrapes from:
 - 4 Fighting Illini athletics schedules
 - **Total: 15+ sources, 1000+ events**
 
+## 🌐 Live Demo
+
+**🚀 View it live:** [https://infoshubhjain.github.io/Project-Helix/](https://infoshubhjain.github.io/Project-Helix/)
+
+The app is deployed on GitHub Pages with:
+- ✅ Persistent Google Calendar authentication
+- ✅ Automatic token refresh (session lasts indefinitely)
+- ✅ Browse 1000+ campus events
+- ✅ Full calendar integration
+
 ## 🎓 Development
 
 ### Running Locally
@@ -167,6 +177,16 @@ python3 scrape.py
 
 # Production with Modal (uploads to Firebase)
 modal run scrape.py
+```
+
+### Deploying to GitHub Pages
+See [DEPLOY_TO_GITHUB_PAGES.md](DEPLOY_TO_GITHUB_PAGES.md) for complete deployment instructions.
+
+Quick deploy:
+```bash
+git add .
+git commit -m "Deploy updates"
+git push origin main
 ```
 
 ### VS Code Debugging
