@@ -6,6 +6,8 @@
 
 > A comprehensive campus event aggregation platform for UIUC students
 
+NOTE: This project was orignally part of cs196 (cs124 hons) and I worked on it as part of group 7. I just customised this for my own usecase. All credits go to them.
+
 ## 🎯 What is Project Helix?
 
 Project Helix is a Flask-based web application that:
