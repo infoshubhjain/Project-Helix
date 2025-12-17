@@ -181,26 +181,33 @@
     </div>
   </div>
 
-  <!-- Configuration Script - Fetch from Backend -->
+  <!-- Configuration Script - Fetch from Backend or Fallback -->
   <script>
-    // Google API credentials will be fetched from backend
-    let GOOGLE_CLIENT_ID = '';
-    let GOOGLE_API_KEY = '';
+    // Fallback credentials for GitHub Pages (static hosting)
+    // Replace with your own credentials from https://console.cloud.google.com/
+    let GOOGLE_CLIENT_ID = '691968245686-5cdnqs5inasr62td91id893m70lg3k09.apps.googleusercontent.com';
+    let GOOGLE_API_KEY = 'AIzaSyD3ZFca0_TgjnstevpbHfo1BNtEWtwlAO4';
 
-    // Fetch Google config from backend on page load
+    // Try to fetch from backend (for server deployments)
     fetch('/api/google/config')
-      .then(response => response.json())
+      .then(response => {
+        if (response.ok) {
+          return response.json();
+        } else {
+          throw new Error('Backend not available (GitHub Pages detected)');
+        }
+      })
       .then(config => {
         if (config.client_id && config.api_key) {
+          // Override with backend credentials (more secure)
           GOOGLE_CLIENT_ID = config.client_id;
           GOOGLE_API_KEY = config.api_key;
           console.log('✅ Google Calendar credentials loaded from backend');
-        } else {
-          console.warn('⚠️ Google Calendar integration is not configured');
         }
       })
       .catch(error => {
-        console.error('❌ Failed to load Google Calendar config:', error);
+        // Fallback to hardcoded credentials (GitHub Pages or backend offline)
+        console.log('ℹ️ Using fallback credentials (GitHub Pages mode)');
       });
   </script>
 
