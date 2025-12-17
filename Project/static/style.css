@@ -1216,6 +1216,10 @@ body.dark-mode .email-events-section {
   border-color: var(--border-color);
 }
 
+body.dark-mode .events-panel h3 {
+  color: white;
+}
+
 body.dark-mode .event-card-browse {
   background: var(--card-bg);
   border-color: var(--input-border);
