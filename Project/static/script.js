@@ -199,10 +199,10 @@ setInterval(updateCurrentDate, 60000);
 // Initialize dark mode from localStorage
 function initDarkMode() {
   const darkMode = localStorage.getItem('darkMode');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-  // Apply dark mode if previously enabled OR if user prefers dark and hasn't explicitly disabled
-  if (darkMode === 'enabled' || (darkMode === null && prefersDark)) {
+  // Only apply dark mode if user has explicitly enabled it
+  // Default to light mode for all users
+  if (darkMode === 'enabled') {
     document.body.classList.add('dark-mode');
     updateDarkModeButton(true);
   }
@@ -258,21 +258,6 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     console.warn('⚠️ Header dark mode button not found in DOM');
   }
-
-  // Listen for system preference changes
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-    const darkMode = localStorage.getItem('darkMode');
-    // Only auto-switch if user hasn't manually set a preference
-    if (darkMode === null) {
-      if (e.matches) {
-        document.body.classList.add('dark-mode');
-        updateDarkModeButton(true);
-      } else {
-        document.body.classList.remove('dark-mode');
-        updateDarkModeButton(false);
-      }
-    }
-  });
 });
 
 // Make showToast available globally
