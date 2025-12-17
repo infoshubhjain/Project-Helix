@@ -49,16 +49,45 @@
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 24px;
+
+  /* Theme-specific colors (for dark mode) */
+  --bg-primary: linear-gradient(135deg, #13294B 0%, #1C3A5F 100%);
+  --bg-card: rgba(250, 250, 250, 0.98);
+  --text-primary: #13294B;
+  --text-secondary: #13294B;
+  --border-color: #E84A27;
+  --card-bg: white;
+  --input-bg: white;
+  --input-border: var(--gray-200);
+}
+
+/* Dark Mode Colors */
+body.dark-mode {
+  --bg-primary: linear-gradient(135deg, #0A1929 0%, #1A2332 100%);
+  --bg-card: rgba(26, 35, 50, 0.95);
+  --text-primary: #E8EAED;
+  --text-secondary: #BDC1C6;
+  --border-color: #FF8C66;
+  --card-bg: #1E2A38;
+  --input-bg: #2A3848;
+  --input-border: #3A4858;
+  --gray-50: #1A2332;
+  --gray-100: #2A3848;
+  --gray-200: #3A4858;
+  --gray-300: #4A5868;
+  --gray-400: #6A7888;
+  --gray-500: #8A9AA8;
 }
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: linear-gradient(135deg, #13294B 0%, #1C3A5F 100%);
+  background: var(--bg-primary);
   min-height: 100vh;
-  color: #13294B;
+  color: var(--text-primary);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
 .container {
@@ -69,10 +98,10 @@ body {
 
 /* ========== HEADER ========== */
 header {
-  background: rgba(250, 250, 250, 0.98);
+  background: var(--bg-card);
   backdrop-filter: blur(10px);
   border-radius: var(--radius-lg);
-  border: 3px solid #E84A27;
+  border: 3px solid var(--border-color);
   padding: 24px 32px;
   margin-bottom: 32px;
   box-shadow: var(--shadow-lg);
@@ -1072,4 +1101,136 @@ footer {
     opacity: 0;
     transform: translateY(-20px);
   }
+}
+
+/* ========== EXPORT & DARK MODE BUTTONS ========== */
+.export-btn,
+.dark-mode-btn {
+  padding: 10px 16px;
+  border: 2px solid var(--input-border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.export-btn:hover,
+.dark-mode-btn:hover {
+  background: var(--gray-100);
+  border-color: var(--primary-dark);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.dark-mode-btn {
+  font-size: 18px;
+  padding: 10px 14px;
+}
+
+/* ========== LOAD MORE BUTTON ========== */
+.load-more-btn {
+  width: 100%;
+  padding: 16px 24px;
+  margin-top: 24px;
+  background: var(--primary-dark);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: var(--shadow-md);
+}
+
+.load-more-btn:hover {
+  background: var(--primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.load-more-btn:active {
+  transform: translateY(0);
+}
+
+/* ========== DARK MODE SPECIFIC OVERRIDES ========== */
+body.dark-mode header h1,
+body.dark-mode .section-header h2,
+body.dark-mode .browse-header h3 {
+  color: var(--text-primary);
+}
+
+body.dark-mode #current-date,
+body.dark-mode #connection-status,
+body.dark-mode #user-email {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .calendar-container,
+body.dark-mode .events-panel,
+body.dark-mode .browse-section,
+body.dark-mode .email-events-section {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .event-card-browse {
+  background: var(--card-bg);
+  border-color: var(--input-border);
+}
+
+body.dark-mode .event-card-browse:hover {
+  border-color: var(--border-color);
+}
+
+body.dark-mode .event-card-title,
+body.dark-mode .event-card-info {
+  color: var(--text-primary);
+}
+
+body.dark-mode #search-events,
+body.dark-mode #filter-category {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+
+body.dark-mode #search-events:focus,
+body.dark-mode #filter-category:focus {
+  border-color: var(--border-color);
+}
+
+body.dark-mode .modal-content {
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+body.dark-mode .modal-content input,
+body.dark-mode .modal-content textarea,
+body.dark-mode .modal-content select {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+
+body.dark-mode .no-events-text {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .toast {
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+body.dark-mode .toast-title {
+  color: var(--text-primary);
+}
+
+body.dark-mode .toast-message {
+  color: var(--text-secondary);
 }

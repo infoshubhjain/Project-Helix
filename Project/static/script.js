@@ -195,7 +195,72 @@ updateCurrentDate();
 // Update date every minute
 setInterval(updateCurrentDate, 60000);
 
-// ========== TOAST NOTIFICATION SYSTEM ==========
+// ========== DARK MODE TOGGLE ==========
+// Initialize dark mode from localStorage
+function initDarkMode() {
+  const darkMode = localStorage.getItem('darkMode');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  // Apply dark mode if previously enabled OR if user prefers dark and hasn't explicitly disabled
+  if (darkMode === 'enabled' || (darkMode === null && prefersDark)) {
+    document.body.classList.add('dark-mode');
+    updateDarkModeButton(true);
+  }
+}
+
+// Toggle dark mode
+function toggleDarkMode() {
+  const isDark = document.body.classList.toggle('dark-mode');
+  localStorage.setItem('darkMode', isDark ? 'enabled' : 'disabled');
+  updateDarkModeButton(isDark);
+
+  // Show toast notification
+  showToast(
+    isDark ? 'Dark Mode On' : 'Light Mode On',
+    `Switched to ${isDark ? 'dark' : 'light'} mode`,
+    'info',
+    2000
+  );
+}
+
+// Update dark mode button appearance
+function updateDarkModeButton(isDark) {
+  const btn = document.getElementById('dark-mode-toggle');
+  if (btn) {
+    btn.textContent = isDark ? '☀️' : '🌙';
+    btn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+  }
+}
+
+// Set up dark mode toggle button
+document.addEventListener('DOMContentLoaded', () => {
+  initDarkMode();
+
+  const darkModeBtn = document.getElementById('dark-mode-toggle');
+  if (darkModeBtn) {
+    darkModeBtn.addEventListener('click', toggleDarkMode);
+  }
+
+  // Listen for system preference changes
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+    const darkMode = localStorage.getItem('darkMode');
+    // Only auto-switch if user hasn't manually set a preference
+    if (darkMode === null) {
+      if (e.matches) {
+        document.body.classList.add('dark-mode');
+        updateDarkModeButton(true);
+      } else {
+        document.body.classList.remove('dark-mode');
+        updateDarkModeButton(false);
+      }
+    }
+  });
+});
+
+// Make showToast available globally
+window.showToast = showToast;
+
+// ========== ENHANCED TOAST NOTIFICATION SYSTEM ==========
 function showToast(title, message, type = 'info', duration = 4000) {
   const container = document.getElementById('toast-container');
 

@@ -94,6 +94,9 @@
             <select id="filter-category">
               <option value="all">All Categories</option>
             </select>
+            <button id="export-ical-btn" class="export-btn" title="Export to iCal format">📅 iCal</button>
+            <button id="export-csv-btn" class="export-btn" title="Export to CSV spreadsheet">📊 CSV</button>
+            <button id="dark-mode-toggle" class="dark-mode-btn" title="Toggle dark mode">🌙</button>
           </div>
         </div>
         <div id="browse-events" class="browse-container">
@@ -178,11 +181,27 @@
     </div>
   </div>
 
-  <!-- Configuration Script - YOUR CREDENTIALS -->
+  <!-- Configuration Script - Fetch from Backend -->
   <script>
-    // Your Google API credentials from credentials.json
-    const GOOGLE_CLIENT_ID = '691968245686-5cdnqs5inasr62td91id893m70lg3k09.apps.googleusercontent.com';
-    const GOOGLE_API_KEY = 'AIzaSyD3ZFca0_TgjnstevpbHfo1BNtEWtwlAO4';
+    // Google API credentials will be fetched from backend
+    let GOOGLE_CLIENT_ID = '';
+    let GOOGLE_API_KEY = '';
+
+    // Fetch Google config from backend on page load
+    fetch('/api/google/config')
+      .then(response => response.json())
+      .then(config => {
+        if (config.client_id && config.api_key) {
+          GOOGLE_CLIENT_ID = config.client_id;
+          GOOGLE_API_KEY = config.api_key;
+          console.log('✅ Google Calendar credentials loaded from backend');
+        } else {
+          console.warn('⚠️ Google Calendar integration is not configured');
+        }
+      })
+      .catch(error => {
+        console.error('❌ Failed to load Google Calendar config:', error);
+      });
   </script>
 
   <!-- Toast Notification Container -->

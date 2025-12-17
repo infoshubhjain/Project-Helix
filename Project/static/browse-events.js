@@ -4,8 +4,8 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
 import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+// Import export functions
+import { exportToICal, exportToCSV } from './export.js';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -36,6 +36,11 @@ document.addEventListener("DOMContentLoaded", function() {
 
   // Store all events in a simple array
   let allEvents = [];
+
+  // Pagination variables
+  let currentlyDisplayedEvents = []; // Events that match current filter
+  let displayedCount = 0; // How many events are currently shown
+  const EVENTS_PER_PAGE = 30; // Show 30 events at a time
 
   // ========== STEP 1: Load Events ==========
   // Convert the events object from the server into an array
@@ -211,10 +216,14 @@ document.addEventListener("DOMContentLoaded", function() {
   }
 
   // ========== STEP 3: Display Events ==========
-  // Show events as cards on the page
-  function displayEvents(events) {
-    // Clear any existing cards
-    browseContainer.innerHTML = '';
+  // Show events as cards on the page with pagination
+  function displayEvents(events, append = false) {
+    // Store the filtered events for pagination
+    if (!append) {
+      currentlyDisplayedEvents = events;
+      displayedCount = 0;
+      browseContainer.innerHTML = ''; // Clear existing cards
+    }
 
     // If no events, show a message
     if (events.length === 0) {
@@ -222,11 +231,44 @@ document.addEventListener("DOMContentLoaded", function() {
       return;
     }
 
-    // Create a card for each event
-    for (let i = 0; i < events.length; i++) {
+    // Calculate how many events to show
+    const endIndex = Math.min(displayedCount + EVENTS_PER_PAGE, events.length);
+
+    // Create cards for the next batch of events
+    for (let i = displayedCount; i < endIndex; i++) {
       let card = createEventCard(events[i]);
       browseContainer.appendChild(card);
     }
+
+    // Update displayed count
+    displayedCount = endIndex;
+
+    // Add or update the "Load More" button
+    updateLoadMoreButton();
+  }
+
+  // ========== Update Load More Button ==========
+  function updateLoadMoreButton() {
+    // Remove existing button if present
+    const existingButton = document.getElementById('load-more-btn');
+    if (existingButton) {
+      existingButton.remove();
+    }
+
+    // Only show button if there are more events to load
+    if (displayedCount < currentlyDisplayedEvents.length) {
+      const loadMoreBtn = document.createElement('button');
+      loadMoreBtn.id = 'load-more-btn';
+      loadMoreBtn.className = 'load-more-btn';
+      loadMoreBtn.textContent = `Load More (${currentlyDisplayedEvents.length - displayedCount} remaining)`;
+      loadMoreBtn.onclick = loadMoreEvents;
+      browseContainer.appendChild(loadMoreBtn);
+    }
+  }
+
+  // ========== Load More Events ==========
+  function loadMoreEvents() {
+    displayEvents(currentlyDisplayedEvents, true);
   }
 
   // ========== STEP 4: Create a Single Event Card ==========
@@ -417,6 +459,23 @@ document.addEventListener("DOMContentLoaded", function() {
       detailModal.style.display = 'none';
     }
   });
+
+  // ========== EXPORT FUNCTIONALITY ==========
+  // Export to iCal button
+  const exportICalBtn = document.getElementById('export-ical-btn');
+  if (exportICalBtn) {
+    exportICalBtn.addEventListener('click', () => {
+      exportToICal(currentlyDisplayedEvents.length > 0 ? currentlyDisplayedEvents : allEvents);
+    });
+  }
+
+  // Export to CSV button
+  const exportCSVBtn = document.getElementById('export-csv-btn');
+  if (exportCSVBtn) {
+    exportCSVBtn.addEventListener('click', () => {
+      exportToCSV(currentlyDisplayedEvents.length > 0 ? currentlyDisplayedEvents : allEvents);
+    });
+  }
 
   // ========== START THE APP ==========
   loadEvents();

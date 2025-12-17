@@ -1,10 +1,11 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_cors import CORS
 import os
 import sys
 from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
+import json
 
 # Base directory for this module
 BASE_DIR = Path(__file__).resolve().parent
@@ -21,19 +22,76 @@ load_dotenv()
 
 # Creates the flask app
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24).hex())
 
 # Get environment variables for Microsoft auth (optional - only needed for email parsing)
 TENANT_ID = os.getenv("TENANT_ID")
 CLIENT_ID = os.getenv("CLIENT_ID")
 
+# Get Google API credentials from environment
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
 # Check if email parsing is enabled (requires Azure AD credentials)
 EMAIL_PARSING_ENABLED = bool(TENANT_ID and CLIENT_ID)
+
+# Check if Google Calendar is enabled
+GOOGLE_CALENDAR_ENABLED = bool(GOOGLE_CLIENT_ID and GOOGLE_API_KEY)
 
 # Loads the home page
 @app.route("/")
 def index():
-    return render_template("index.html", email_parsing_enabled=EMAIL_PARSING_ENABLED)
+    return render_template("index.html",
+                         email_parsing_enabled=EMAIL_PARSING_ENABLED,
+                         google_calendar_enabled=GOOGLE_CALENDAR_ENABLED)
+
+# Google Calendar API Configuration Endpoint
+@app.route("/api/google/config", methods=["GET"])
+def get_google_config():
+    """Return Google API configuration (client ID only, not secrets)"""
+    if not GOOGLE_CALENDAR_ENABLED:
+        return jsonify({"error": "Google Calendar integration is disabled"}), 503
+
+    return jsonify({
+        "client_id": GOOGLE_CLIENT_ID,
+        "api_key": GOOGLE_API_KEY
+    })
+
+# Google Calendar - Add Event Endpoint
+@app.route("/api/calendar/add_event", methods=["POST"])
+def add_calendar_event():
+    """Proxy endpoint to add event to Google Calendar"""
+    try:
+        data = request.json
+        access_token = data.get("access_token")
+        event_data = data.get("event")
+
+        if not access_token or not event_data:
+            return jsonify({"error": "Missing access token or event data"}), 400
+
+        # Make request to Google Calendar API
+        import requests
+
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+
+        response = requests.post(
+            "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+            headers=headers,
+            json=event_data
+        )
+
+        if response.status_code == 200 or response.status_code == 201:
+            return jsonify(response.json())
+        else:
+            return jsonify({"error": "Failed to create event", "details": response.text}), response.status_code
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # Email processing endpoints
 @app.route("/api/process_emails", methods=["POST"])
