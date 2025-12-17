@@ -254,6 +254,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const headerDarkModeBtn = document.getElementById('dark-mode-toggle-header');
   if (headerDarkModeBtn) {
     headerDarkModeBtn.addEventListener('click', toggleDarkMode);
+    console.log('✅ Header dark mode button initialized');
+  } else {
+    console.warn('⚠️ Header dark mode button not found in DOM');
   }
 
   // Listen for system preference changes

@@ -1134,18 +1134,22 @@ footer {
 
 /* Dark mode button in header - more prominent */
 .dark-mode-btn-header {
-  padding: 10px 16px;
+  padding: 12px 20px;
   border: 2px solid var(--primary-dark);
   border-radius: var(--radius-md);
   background: var(--primary-dark);
   color: white;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
-  font-size: 18px;
+  font-size: 20px;
   font-family: inherit;
   white-space: nowrap;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
+  min-width: 60px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dark-mode-btn-header:hover {
