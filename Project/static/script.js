@@ -225,10 +225,18 @@ function toggleDarkMode() {
 
 // Update dark mode button appearance
 function updateDarkModeButton(isDark) {
+  // Update browse section button
   const btn = document.getElementById('dark-mode-toggle');
   if (btn) {
     btn.textContent = isDark ? '☀️' : '🌙';
     btn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+  }
+
+  // Update header button
+  const headerBtn = document.getElementById('dark-mode-toggle-header');
+  if (headerBtn) {
+    headerBtn.textContent = isDark ? '☀️' : '🌙';
+    headerBtn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
   }
 }
 
@@ -236,9 +244,16 @@ function updateDarkModeButton(isDark) {
 document.addEventListener('DOMContentLoaded', () => {
   initDarkMode();
 
+  // Browse section dark mode button
   const darkModeBtn = document.getElementById('dark-mode-toggle');
   if (darkModeBtn) {
     darkModeBtn.addEventListener('click', toggleDarkMode);
+  }
+
+  // Header dark mode button
+  const headerDarkModeBtn = document.getElementById('dark-mode-toggle-header');
+  if (headerDarkModeBtn) {
+    headerDarkModeBtn.addEventListener('click', toggleDarkMode);
   }
 
   // Listen for system preference changes

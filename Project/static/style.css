@@ -1132,6 +1132,39 @@ footer {
   padding: 10px 14px;
 }
 
+/* Dark mode button in header - more prominent */
+.dark-mode-btn-header {
+  padding: 10px 16px;
+  border: 2px solid var(--primary-dark);
+  border-radius: var(--radius-md);
+  background: var(--primary-dark);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 18px;
+  font-family: inherit;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+
+.dark-mode-btn-header:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+body.dark-mode .dark-mode-btn-header {
+  background: var(--warning);
+  border-color: var(--warning);
+}
+
+body.dark-mode .dark-mode-btn-header:hover {
+  background: #FFB84D;
+  border-color: #FFB84D;
+}
+
 /* ========== LOAD MORE BUTTON ========== */
 .load-more-btn {
   width: 100%;
