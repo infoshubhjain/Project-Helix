@@ -9,6 +9,11 @@ from playwright.sync_api import sync_playwright
 import re
 import requests
 import json
+import logging
+from pathlib import Path
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__) 
 
 # Variables & Constants
 event_count = 0
@@ -45,15 +50,15 @@ def scrape_general():
     events = {}
     used = []
 
-    print("\n🔍 Testing scrape_general()...")
-    print(f"   Scraping {len(GENERAL_CALENDAR_LINKS)} calendar sources...")
+    logger.info("\n🔍 Testing scrape_general()...")
+    logger.info(f"   Scraping {len(GENERAL_CALENDAR_LINKS)} calendar sources...")
 
     for idx, calendar_link in enumerate(GENERAL_CALENDAR_LINKS, 1):
         try:
             html_text = session.get(calendar_link, timeout=10).text
             soup = BeautifulSoup(html_text, "lxml")
             event_listings = soup.find_all("div", class_="title")
-            print(f"   [{idx}/{len(GENERAL_CALENDAR_LINKS)}] {calendar_link} - Found {len(event_listings)} events")
+            logger.info(f"   [{idx}/{len(GENERAL_CALENDAR_LINKS)}] {calendar_link} - Found {len(event_listings)} events")
 
             for i in range(0, len(event_listings)):
                 event_link = "https://calendars.illinois.edu/" + event_listings[i].find("a").attrs["href"]
@@ -69,15 +74,20 @@ def scrape_general():
                 soup = BeautifulSoup(html_text, "lxml")
                 event = soup.find("section", class_="detail-content")
 
-                name_tag = event.find("h2").text
-                if name_tag:
-                    event_name = name_tag.strip()
+                # Defensive checks: skip if event content isn't found
+                if not event:
+                    logger.warning(f"   ⚠️  Skipping event at {event_link} - missing detail-content section")
+                    continue
+
+                name_tag_elem = event.find("h2")
+                if name_tag_elem and name_tag_elem.text:
+                    event_name = name_tag_elem.text.strip()
                 else:
                     event_name = "Unknown Event Name"
                 event_info["summary"] = event_name
                 event_info["description"] = ""
                 desc = event.find("dd", class_="ws-description")
-                if desc != None:
+                if desc is not None and desc.text:
                     event_info["description"] = desc.text
                 event_info["htmlLink"] = event_link
 
@@ -166,23 +176,23 @@ def scrape_general():
                 event_count += 1
 
         except Exception as e:
-            print(f"   ❌ Error scraping {calendar_link}: {str(e)}")
+            logger.warning(f"   ❌ Error scraping {calendar_link}: {str(e)}")
 
-    print(f"   ✅ scrape_general() completed: {len(events)} unique events")
+    logger.info(f"   ✅ scrape_general() completed: {len(events)} unique events")
     return events
 
 def scrape_state_farm():
     global event_count
     events = {}
 
-    print("\n🔍 Testing scrape_state_farm()...")
-    print(f"   Scraping {STATE_FARM_CENTER_CALENDAR_LINK}...")
+    logger.info("\n🔍 Testing scrape_state_farm()...")
+    logger.info(f"   Scraping {STATE_FARM_CENTER_CALENDAR_LINK}...")
 
     try:
         html_text = requests.get(STATE_FARM_CENTER_CALENDAR_LINK, timeout=10).text
         soup = BeautifulSoup(html_text, "lxml")
         event_listings = soup.find_all("a", class_="more buttons-hide")
-        print(f"   Found {len(event_listings)} event listings")
+        logger.info(f"   Found {len(event_listings)} event listings")
 
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
@@ -242,14 +252,14 @@ def scrape_state_farm():
                     event_count += 1
 
                 except Exception as e:
-                    print(f"   ⚠️  Error scraping event {i+1}: {str(e)}")
+                    logger.warning(f"   ⚠️  Error scraping event {i+1}: {str(e)}")
 
             browser.close()
 
-        print(f"   ✅ scrape_state_farm() completed: {len(events)} events")
+        logger.info(f"   ✅ scrape_state_farm() completed: {len(events)} events")
 
     except Exception as e:
-        print(f"   ❌ Error in scrape_state_farm(): {str(e)}")
+        logger.warning(f"   ❌ Error in scrape_state_farm(): {str(e)}")
 
     return events
 
@@ -258,15 +268,15 @@ def scrape_athletics():
     session = requests.Session()
     events = {}
 
-    print("\n🔍 Testing scrape_athletics()...")
-    print(f"   Scraping {len(ATHLETIC_TICKET_LINKS)} athletic schedules...")
+    logger.info("\n🔍 Testing scrape_athletics()...")
+    logger.info(f"   Scraping {len(ATHLETIC_TICKET_LINKS)} athletic schedules...")
 
     for idx, calendar_link in enumerate(ATHLETIC_TICKET_LINKS, 1):
         try:
             html_text = session.get(calendar_link, timeout=10).text
             soup = BeautifulSoup(html_text, "lxml")
             event_listings = soup.find_all("li", class_="sidearm-schedule-home-game")
-            print(f"   [{idx}/{len(ATHLETIC_TICKET_LINKS)}] {calendar_link} - Found {len(event_listings)} home games")
+            logger.info(f"   [{idx}/{len(ATHLETIC_TICKET_LINKS)}] {calendar_link} - Found {len(event_listings)} home games")
 
             if sport := re.match(r"[\d-]+ (.*) Schedule", soup.find("div", class_="sidearm-schedule-title").find("h2").text):
                 sport = sport.group(1)
@@ -334,9 +344,9 @@ def scrape_athletics():
                 event_count += 1
 
         except Exception as e:
-            print(f"   ❌ Error scraping {calendar_link}: {str(e)}")
+            logger.warning(f"   ❌ Error scraping {calendar_link}: {str(e)}")
 
-    print(f"   ✅ scrape_athletics() completed: {len(events)} events")
+    logger.info(f"   ✅ scrape_athletics() completed: {len(events)} events")
     return events
 
 def main():
@@ -358,28 +368,36 @@ def main():
     general_events = scrape_general()
     all_events.update(general_events)
 
-    print("\n" + "=" * 60)
-    print("📊 SUMMARY")
-    print("=" * 60)
-    print(f"State Farm Center Events: {len(state_farm_events)}")
-    print(f"Athletics Events: {len(athletics_events)}")
-    print(f"General Calendar Events: {len(general_events)}")
-    print(f"TOTAL EVENTS SCRAPED: {len(all_events)}")
+    # Save outputs to JSON files in Project/calander/
+    output_dir = Path(__file__).parent / "calander"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "state_farm_events.json").write_text(json.dumps(state_farm_events, indent=2))
+    (output_dir / "athletics_events.json").write_text(json.dumps(athletics_events, indent=2))
+    (output_dir / "general_events.json").write_text(json.dumps(general_events, indent=2))
+    logger.info(f"   🔁 Saved outputs to {output_dir}")
+
+    logger.info("\n" + "=" * 60)
+    logger.info("📊 SUMMARY")
+    logger.info("=" * 60)
+    logger.info(f"State Farm Center Events: {len(state_farm_events)}")
+    logger.info(f"Athletics Events: {len(athletics_events)}")
+    logger.info(f"General Calendar Events: {len(general_events)}")
+    logger.info(f"TOTAL EVENTS SCRAPED: {len(all_events)}")
 
     # Show sample events
-    print("\n" + "=" * 60)
-    print("📋 SAMPLE EVENTS (first 3)")
-    print("=" * 60)
+    logger.info("\n" + "=" * 60)
+    logger.info("📋 SAMPLE EVENTS (first 3)")
+    logger.info("=" * 60)
     for i, (key, event) in enumerate(list(all_events.items())[:3]):
-        print(f"\nEvent {key}:")
-        print(f"  Title: {event.get('summary', 'N/A')}")
-        print(f"  Start: {event.get('start', 'N/A')}")
-        print(f"  Location: {event.get('location', 'N/A')}")
-        print(f"  Tag: {event.get('tag', 'N/A')}")
+        logger.info(f"\nEvent {key}:")
+        logger.info(f"  Title: {event.get('summary', 'N/A')}")
+        logger.info(f"  Start: {event.get('start', 'N/A')}")
+        logger.info(f"  Location: {event.get('location', 'N/A')}")
+        logger.info(f"  Tag: {event.get('tag', 'N/A')}")
 
-    print("\n" + "=" * 60)
-    print("✅ ALL SCRAPERS TESTED")
-    print("=" * 60)
+    logger.info("\n" + "=" * 60)
+    logger.info("✅ ALL SCRAPERS TESTED")
+    logger.info("=" * 60)
 
 if __name__ == "__main__":
     main()
