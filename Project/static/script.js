@@ -196,30 +196,44 @@ updateCurrentDate();
 setInterval(updateCurrentDate, 60000);
 
 // ========== DARK MODE TOGGLE ==========
-// Initialize dark mode from localStorage
+// Initialize dark mode from localStorage or OS preference
 function initDarkMode() {
-  const darkMode = localStorage.getItem('darkMode');
+  const stored = localStorage.getItem('darkMode');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-  // Only apply dark mode if user has explicitly enabled it
-  // Default to light mode for all users
-  if (darkMode === 'enabled') {
+  // If user set preference previously, respect it; otherwise use OS preference
+  if (stored === 'enabled' || (stored === null && prefersDark)) {
     document.body.classList.add('dark-mode');
     updateDarkModeButton(true);
   }
+
+  // Add a transient class to enable smooth theme transitions
+  document.body.classList.add('theme-transition');
+  // Remove the transition class after animations to avoid unwanted transitions on load
+  setTimeout(() => document.body.classList.remove('theme-transition'), 500);
 }
 
-// Toggle dark mode
+// Toggle dark mode with smooth micro-interaction
 function toggleDarkMode() {
   const isDark = document.body.classList.toggle('dark-mode');
   localStorage.setItem('darkMode', isDark ? 'enabled' : 'disabled');
   updateDarkModeButton(isDark);
+
+  // Small animation for header button
+  const headerBtn = document.getElementById('dark-mode-toggle-header');
+  if (headerBtn) {
+    headerBtn.animate([
+      { transform: 'rotate(0deg)' },
+      { transform: 'rotate(360deg)' }
+    ], { duration: 450, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
 
   // Show toast notification
   showToast(
     isDark ? 'Dark Mode On' : 'Light Mode On',
     `Switched to ${isDark ? 'dark' : 'light'} mode`,
     'info',
-    2000
+    1800
   );
 }
 
@@ -230,6 +244,7 @@ function updateDarkModeButton(isDark) {
   if (btn) {
     btn.textContent = isDark ? '☀️' : '🌙';
     btn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+    btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
   }
 
   // Update header button
@@ -237,6 +252,7 @@ function updateDarkModeButton(isDark) {
   if (headerBtn) {
     headerBtn.textContent = isDark ? '☀️' : '🌙';
     headerBtn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+    headerBtn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
   }
 }
 

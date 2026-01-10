@@ -14,21 +14,23 @@
   <div class="container">
     <header>
       <div class="header-logo">
-        <img src="{{ url_for('static', filename='images/Illinois_Block_I.png') }}" alt="Illinois Block I" class="logo-img">
         <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="Project Helix Logo" class="logo-img">
-        <h1>Project Helix @ Illinois</h1>
+        <div>
+          <h1>Project Helix</h1>
+          <div id="current-date" aria-hidden="true"></div>
+        </div>
       </div>
-      <div class="header-buttons">
-      <!-- Connection Status and Button -->
-        <button id="connect-calendar-btn" class="connect-btn">
-          🔗 Connect Your Google Calendar
+      <div class="header-buttons" role="toolbar">
+        <!-- Connection Status and Button -->
+        <button id="connect-calendar-btn" class="connect-btn" aria-label="Connect your Google Calendar">
+          🔗&nbsp;<span style="margin-left:6px">Connect calendar</span>
         </button>
-        <span id="connection-status" style="display: none;">
+        <span id="connection-status" style="display: none;" aria-live="polite">
           ✅ Connected as <span id="user-email"></span>
-          <button id="disconnect-btn" class="disconnect-btn">Disconnect</button>
+          <button id="disconnect-btn" class="disconnect-btn" aria-label="Disconnect">Disconnect</button>
         </span>
         <!-- Dark Mode Toggle in Header -->
-        <button id="dark-mode-toggle-header" class="dark-mode-btn-header" title="Toggle dark mode">🌙</button>
+        <button id="dark-mode-toggle-header" class="dark-mode-btn-header" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
       </div>
     </header>
 
