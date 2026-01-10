@@ -254,6 +254,14 @@ function updateDarkModeButton(isDark) {
     headerBtn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
     headerBtn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
   }
+
+  // Update floating button
+  const floatBtn = document.getElementById('floating-theme-toggle');
+  if (floatBtn) {
+    floatBtn.textContent = isDark ? '☀️' : '🌙';
+    floatBtn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+    floatBtn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+  }
 }
 
 // Set up dark mode toggle button
@@ -273,6 +281,21 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('✅ Header dark mode button initialized');
   } else {
     console.warn('⚠️ Header dark mode button not found in DOM');
+  }
+
+  // Floating theme toggle (bottom-right)
+  const floatingBtn = document.getElementById('floating-theme-toggle');
+  if (floatingBtn) {
+    floatingBtn.addEventListener('click', () => {
+      toggleDarkMode();
+      // small pulse animation
+      floatingBtn.animate([
+        { transform: 'scale(1)' },
+        { transform: 'scale(1.08)' },
+        { transform: 'scale(1)' }
+      ], { duration: 300, easing: 'ease-out' });
+    });
+    console.log('✅ Floating theme toggle initialized');
   }
 });
 
