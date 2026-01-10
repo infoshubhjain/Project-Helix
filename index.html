@@ -27,6 +27,8 @@
           ✅ Connected as <span id="user-email"></span>
           <button id="disconnect-btn" class="disconnect-btn">Disconnect</button>
         </span>
+        <!-- Dark Mode Toggle in Header -->
+        <button id="dark-mode-toggle-header" class="dark-mode-btn-header" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
       </div>
     </header>
 
@@ -91,6 +93,7 @@
             <select id="filter-category">
               <option value="all">All Categories</option>
             </select>
+            <button id="dark-mode-toggle" class="dark-mode-btn" title="Toggle dark mode">🌙</button>
           </div>
         </div>
         <div id="browse-events" class="browse-container">
@@ -156,6 +159,9 @@
 
   <!-- Toast Notification Container -->
   <div id="toast-container"></div>
+
+  <!-- Floating Theme Toggle -->
+  <button id="floating-theme-toggle" class="floating-theme-toggle" title="Toggle dark mode" aria-label="Toggle dark mode" aria-pressed="false">🌙</button>
 
   <script src="Project/static/calendar-connect.js"></script>
   <script src="Project/static/script.js"></script>
