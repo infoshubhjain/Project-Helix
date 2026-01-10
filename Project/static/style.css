@@ -151,6 +151,38 @@ header h1 {
   flex-wrap: nowrap;
 }
 
+/* Floating theme toggle button (bottom-right) */
+.floating-theme-toggle {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 1000;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--input-border);
+  box-shadow: var(--shadow-lg);
+  padding: 10px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.18s ease, background 0.2s ease, color 0.2s ease;
+}
+.floating-theme-toggle:hover {
+  transform: translateY(-4px) scale(1.02);
+}
+.floating-theme-toggle:focus {
+  outline: 3px solid rgba(232,74,39,0.12);
+  outline-offset: 4px;
+}
+body.dark-mode .floating-theme-toggle {
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border-color: var(--input-border);
+}
+
 .header-buttons button {
   padding: 8px 14px;
   border: none;
