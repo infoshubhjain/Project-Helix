@@ -11,6 +11,7 @@ import requests
 import json
 import logging
 from pathlib import Path
+import os
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__) 
@@ -396,6 +397,20 @@ def main():
         logger.info(f"  Tag: {event.get('tag', 'N/A')}")
 
     logger.info("\n" + "=" * 60)
+
+    # Fail fast in CI when strict mode is enabled
+    if os.environ.get("CI_STRICT", "").lower() == "true":
+        zeroed = []
+        if len(state_farm_events) == 0:
+            zeroed.append("state_farm")
+        if len(athletics_events) == 0:
+            zeroed.append("athletics")
+        if len(general_events) == 0:
+            zeroed.append("general")
+        if zeroed:
+            logger.error(f"❌ CI_STRICT detected zero events for: {', '.join(zeroed)}. Failing job.")
+            raise SystemExit(2)
+
     logger.info("✅ ALL SCRAPERS TESTED")
     logger.info("=" * 60)
 
