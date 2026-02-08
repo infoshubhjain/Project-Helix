@@ -72,7 +72,7 @@ def scrape_general():
                     continue
                 base = "https://calendars.illinois.edu"
                 event_link = (base + "/" + raw_href.lstrip("/")) if not raw_href.startswith("http") else raw_href
-                event_id = event_link.split("eventId=")[-1].split("&")[0]
+                event_id = event_link.split("eventId=")[1].split("&")[0]
                 if event_id in used:
                     continue
                 used.append(event_id)
@@ -90,7 +90,10 @@ def scrape_general():
                 continue
 
             name_tag = event.find("h2")
-            event_name = name_tag.text.strip() if name_tag and name_tag.text else "Unknown Event Name"
+            if name_tag and name_tag.text:
+                event_name = name_tag.text.strip()
+            else:
+                event_name = "Unknown Event Name"
             event_info["summary"] = event_name
 
             try:

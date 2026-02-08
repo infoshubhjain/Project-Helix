@@ -56,29 +56,36 @@ def scrape_general():
             print(f"   [{idx}/{len(GENERAL_CALENDAR_LINKS)}] {calendar_link} - Found {len(event_listings)} events")
 
             for i in range(0, len(event_listings)):
-                event_link = "https://calendars.illinois.edu/" + event_listings[i].find("a").attrs["href"]
-                event_id = event_link.split("eventId=")[1]
+                try:
+                    anchor = event_listings[i].find("a")
+                    if not anchor or not anchor.get("href"):
+                        continue
+                    event_link = "https://calendars.illinois.edu/" + anchor.attrs["href"]
+                    event_id = event_link.split("eventId=")[1].split("&")[0]
 
-                if event_id in used:
+                    if event_id in used:
+                        continue
+                    else:
+                        used.append(event_id)
+                except Exception:
                     continue
-                else:
-                    used.append(event_id)
 
                 event_info = {}
                 html_text = session.get(event_link, timeout=10).text
                 soup = BeautifulSoup(html_text, "lxml")
                 event = soup.find("section", class_="detail-content")
 
-                name_tag = event.find("h2").text
-                if name_tag:
-                    event_name = name_tag.strip()
+                name_tag = event.find("h2")
+                if name_tag and name_tag.text:
+                    event_name = name_tag.text.strip()
                 else:
                     event_name = "Unknown Event Name"
+                
                 event_info["summary"] = event_name
                 event_info["description"] = ""
                 desc = event.find("dd", class_="ws-description")
-                if desc != None:
-                    event_info["description"] = desc.text
+                if desc is not None and desc.text:
+                    event_info["description"] = desc.text.strip()
                 event_info["htmlLink"] = event_link
 
                 details = dict(zip(
