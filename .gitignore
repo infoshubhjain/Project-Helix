@@ -1,8 +1,9 @@
-# Environment variables and secrets
+# Environment and secrets
 .env
-*.env
 .env.local
 .env.*.local
+*.env
+!.env.example
 
 # Python
 __pycache__/
@@ -35,35 +36,34 @@ ENV/
 env/
 .venv
 
-# IDE
+# IDE and OS
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 .DS_Store
+*.code-workspace
 
-# Google OAuth credentials
+# Google OAuth and credentials
 credentials.json
 token.json
 Project/calander/credentials.json
 Project/calander/token.json
 Project/email_parser/credentials.json
 Project/email_parser/token.json
-
-# Firebase
 firebase-credentials.json
 serviceAccountKey.json
 
-# Logs
+# Logs and temp
 *.log
 logs/
 *.out
-
-# Temporary files
+cron_output.log
 *.tmp
 *.temp
 last_response.json
+Project/calander/last_response.json
 
 # Modal
 .modal/
