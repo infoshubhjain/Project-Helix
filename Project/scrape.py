@@ -52,136 +52,165 @@ def scrape_general():
     session = requests.Session()
     session.headers.update({"User-Agent": "Mozilla/5.0 (compatible; ProjectHelix/1.0)"})
     events = {}
-    used = []
-
-    for calendar_link in GENERAL_CALENDAR_LINKS:
-        try:
-            html_text = session.get(calendar_link, timeout=20).text
-        except Exception:
-            continue
-        soup = BeautifulSoup(html_text, "lxml")
-        event_listings = soup.find_all("div", class_="title")
-
-        for i in range(0, len(event_listings)):
+    
+    # We will verify up to this many pages per calendar to avoid infinite loops
+    MAX_PAGES = 10 
+    
+    for base_calendar_link in GENERAL_CALENDAR_LINKS:
+        # Ensure we use list view and show recurring events
+        current_url = f"{base_calendar_link}?listType=list&isRecurring=true"
+        page_num = 0
+        
+        while current_url and page_num < MAX_PAGES:
             try:
-                anchor = event_listings[i].find("a")
-                if not anchor or not anchor.get("href"):
-                    continue
-                raw_href = anchor.attrs["href"].strip()
-                if "eventId=" not in raw_href:
-                    continue
-                base = "https://calendars.illinois.edu"
-                event_link = (base + "/" + raw_href.lstrip("/")) if not raw_href.startswith("http") else raw_href
-                event_id = event_link.split("eventId=")[1].split("&")[0]
-                if event_id in used:
-                    continue
-                used.append(event_id)
-            except Exception:
-                continue
+                print(f"Scraping {current_url}...")
+                response = session.get(current_url, timeout=20)
+                if response.status_code != 200:
+                    print(f"Failed to fetch {current_url}: Status {response.status_code}")
+                    break
+                    
+                soup = BeautifulSoup(response.text, "lxml")
+                container = soup.find(id="ws-calendar-container")
+                if not container:
+                    break
 
-            event_info = {}
-            try:
-                html_text = session.get(event_link, timeout=20).text
-            except Exception:
-                continue
-            soup = BeautifulSoup(html_text, "lxml")
-            event = soup.find("section", class_="detail-content")
-            if not event:
-                continue
+                # The structure in list view:
+                # <h2>Date Header</h2>
+                # <ul class="event-entries">...events...</ul>
+                
+                # We iterate through all h2 headers in the container
+                headers = container.find_all("h2")
+                
+                for header in headers:
+                    date_str = header.get_text(strip=True)
+                    # Example date_str: "Tuesday, February 10, 2026"
+                    
+                    # Verify this is actually a date header
+                    try:
+                        # Attempt to parse date to confirm it's a date header
+                        # Format: DayOfWeek, Month Day, Year
+                        current_date_obj = datetime.strptime(date_str, "%A, %B %d, %Y")
+                        current_date_str = current_date_obj.strftime("%Y-%m-%d")
+                    except ValueError:
+                        # Not a date header, skip
+                        continue
 
-            name_tag = event.find("h2")
-            if name_tag and name_tag.text:
-                event_name = name_tag.text.strip()
-            else:
-                event_name = "Unknown Event Name"
-            event_info["summary"] = event_name
-
-            try:
-                event_info["description"] = ""
-                desc = event.find("dd", class_="ws-description")
-                if desc is not None and desc.text:
-                    event_info["description"] = desc.text.strip()
-                event_info["htmlLink"] = event_link
-
-                dts, dds = event.find_all("dt"), event.find_all("dd")
-                if len(dts) != len(dds):
-                    dts, dds = dts[:len(dds)], dds[:len(dts)]
-                details = dict(zip(
-                    [d.text.strip().lower().replace(" ", "_") for d in dts],
-                    [d.text for d in dds]
-                ))
-
-                for key in details:
-                    match key:
-                        case "date":
-                            date_string = details[key]
+                    # The next sibling should be the list of events
+                    next_sibling = header.find_next_sibling()
+                    if next_sibling and next_sibling.name == "ul" and "event-entries" in next_sibling.get("class", []):
+                        event_entries = next_sibling.find_all("li", class_="entry")
+                        
+                        for entry in event_entries:
                             try:
-                                month = day = year = None
-                                start_hour = start_minute = end_hour = end_minute = None
-                                if date_match := re.search(r"(\w+)\s+(\d{1,2}),\s+(\d{4})", date_string):
-                                    month = date_match.group(1)
-                                    day = int(date_match.group(2))
-                                    year = int(date_match.group(3))
-                                if time_range_match := re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)", date_string, re.IGNORECASE):
-                                    start_hour = int(time_range_match.group(1))
-                                    start_minute = int(time_range_match.group(2))
-                                    start_meridiem = time_range_match.group(3) or time_range_match.group(6)
-                                    end_hour = int(time_range_match.group(4))
-                                    end_minute = int(time_range_match.group(5))
-                                    end_meridiem = time_range_match.group(6).lower()
-                                    if start_meridiem:
-                                        start_meridiem = start_meridiem.lower()
+                                event_info = {}
+                                
+                                # Title and Link
+                                title_div = entry.find("div", class_="title")
+                                if not title_div: continue
+                                link_tag = title_div.find("a")
+                                if not link_tag: continue
+                                
+                                event_info["summary"] = link_tag.get_text(strip=True)
+                                raw_href = link_tag.get("href", "")
+                                if raw_href.startswith("/"):
+                                    event_info["htmlLink"] = "https://calendars.illinois.edu" + raw_href
+                                else:
+                                    event_info["htmlLink"] = raw_href
+                                    
+                                # Meta: Time and Location
+                                meta = entry.find("div", class_="event-meta")
+                                time_str = "All Day"
+                                location = "TBA"
+                                if meta:
+                                    time_tag = meta.find("li", class_="date")
+                                    if time_tag:
+                                        time_str = time_tag.get_text(strip=True)
+                                    
+                                    loc_tag = meta.find("li", class_="location")
+                                    if loc_tag:
+                                        location = loc_tag.get_text(strip=True)
+
+                                event_info["location"] = location
+                                event_info["tag"] = "General"
+                                event_info["description"] = "" # List view doesn't have full description
+                                
+                                # Parse Time
+                                start_dt = None
+                                end_dt = None
+                                
+                                # Handle "All Day"
+                                if "All Day" in time_str:
+                                    start_dt = current_date_obj.replace(hour=0, minute=0, second=0, microsecond=0)
+                                    end_dt = current_date_obj.replace(hour=23, minute=59, second=59, microsecond=0)
+                                else:
+                                    # Handle time range: "9:00 am - 12:00 pm" or "9:00 am"
+                                    # Normalize string
+                                    time_str = time_str.replace(".", "").lower() # 9:00 a.m. -> 9:00 am
+                                    
+                                    # Regex for range
+                                    range_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)", time_str)
+                                    if range_match:
+                                        sh, sm, s_mer, eh, em, e_mer = range_match.groups()
+                                        sh, sm, eh, em = int(sh), int(sm), int(eh), int(em)
+                                        
+                                        if not s_mer: s_mer = e_mer # Inherit suffix if missing
+                                        
+                                        if s_mer == "pm" and sh != 12: sh += 12
+                                        elif s_mer == "am" and sh == 12: sh = 0
+                                        
+                                        if e_mer == "pm" and eh != 12: eh += 12
+                                        elif e_mer == "am" and eh == 12: eh = 0
+                                        
+                                        start_dt = current_date_obj.replace(hour=sh, minute=sm)
+                                        end_dt = current_date_obj.replace(hour=eh, minute=em)
                                     else:
-                                        start_meridiem = end_meridiem
-                                    if start_meridiem == "pm" and start_hour != 12:
-                                        start_hour += 12
-                                    elif start_meridiem == "am" and start_hour == 12:
-                                        start_hour = 0
-                                    if end_meridiem == "pm" and end_hour != 12:
-                                        end_hour += 12
-                                    elif end_meridiem == "am" and end_hour == 12:
-                                        end_hour = 0
-                                elif time_match := re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", date_string, re.IGNORECASE):
-                                    start_hour = int(time_match.group(1))
-                                    start_minute = int(time_match.group(2))
-                                    start_meridiem = time_match.group(3).lower()
-                                    if start_meridiem == "pm" and start_hour != 12:
-                                        start_hour += 12
-                                    elif start_meridiem == "am" and start_hour == 12:
-                                        start_hour = 0
-                                    end_hour = (start_hour + 2) % 24
-                                    end_minute = start_minute
+                                        # Single time
+                                        single_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", time_str)
+                                        if single_match:
+                                            sh, sm, s_mer = single_match.groups()
+                                            sh, sm = int(sh), int(sm)
+                                            if s_mer == "pm" and sh != 12: sh += 12
+                                            elif s_mer == "am" and sh == 12: sh = 0
+                                            
+                                            start_dt = current_date_obj.replace(hour=sh, minute=sm)
+                                            # Default 1 hour duration
+                                            end_dt = start_dt + timedelta(hours=1)
+                                
+                                if start_dt:
+                                    event_info["start"] = start_dt.replace(tzinfo=ZoneInfo("America/Chicago")).isoformat()
                                 else:
-                                    start_hour, start_minute = 0, 0
-                                    end_hour, end_minute = 23, 59
-                                if None not in (month, day, year, start_hour, start_minute):
-                                    start_dt = datetime(year, parse_month_to_number(month), day, start_hour, start_minute, tzinfo=ZoneInfo("America/Chicago"))
-                                    event_info["start"] = start_dt.isoformat()
-                                else:
-                                    event_info["start"] = ""
-                                if None not in (month, day, year, end_hour, end_minute):
-                                    end_dt = datetime(year, parse_month_to_number(month), day, end_hour, end_minute, tzinfo=ZoneInfo("America/Chicago"))
-                                    event_info["end"] = end_dt.isoformat()
+                                    # Fallback
+                                    event_info["start"] = current_date_obj.replace(tzinfo=ZoneInfo("America/Chicago")).isoformat()
+                                    
+                                if end_dt:
+                                    event_info["end"] = end_dt.replace(tzinfo=ZoneInfo("America/Chicago")).isoformat()
                                 else:
                                     event_info["end"] = ""
-                            except Exception:
-                                event_info["start"] = ""
-                                event_info["end"] = ""
-                        case "location":
-                            event_info["location"] = details[key]
-                        case "event_type":
-                            event_info["tag"] = details[key]
 
-                event_info.setdefault("location", "TBA")
-                event_info.setdefault("tag", "General")
-                event_info = {
-                    key: value.strip() if isinstance(value, str) else value
-                    for key, value in event_info.items()
-                }
-                events[event_count] = event_info
-                event_count += 1
-            except Exception:
-                continue
+                                # Add to events list
+                                events[event_count] = event_info
+                                event_count += 1
+                                
+                            except Exception as e:
+                                # create print statement for error
+                                # print(f"Error parsing event entry: {e}")
+                                continue
+
+                # Pagination
+                next_link_div = soup.select_one("div.next-link a")
+                if next_link_div and next_link_div.get("href"):
+                    next_href = next_link_div.get("href")
+                    if next_href.startswith("/"):
+                        current_url = "https://calendars.illinois.edu" + next_href
+                    else:
+                         current_url = next_href # Should probably handle relative paths better if needed
+                    page_num += 1
+                else:
+                    current_url = None # No more pages
+
+            except Exception as e:
+                print(f"Error scraping {current_url}: {e}")
+                break
 
     return events
 
