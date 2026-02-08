@@ -48,8 +48,8 @@ env/
 # Google OAuth and credentials
 credentials.json
 token.json
-Project/calander/credentials.json
-Project/calander/token.json
+Project/calendar/credentials.json
+Project/calendar/token.json
 Project/email_parser/credentials.json
 Project/email_parser/token.json
 firebase-credentials.json
@@ -63,7 +63,7 @@ cron_output.log
 *.tmp
 *.temp
 last_response.json
-Project/calander/last_response.json
+Project/calendar/last_response.json
 
 # Modal
 .modal/

@@ -91,8 +91,8 @@ def test_file_structure():
         "static/script.js": base / "static" / "script.js",
         "static/browse-events.js": base / "static" / "browse-events.js",
         "static/calendar-connect.js": base / "static" / "calendar-connect.js",
-        "calander/readEmail.py": base / "calander" / "readEmail.py",
-        "calander/prompt.txt": base / "calander" / "prompt.txt",
+        "calendar/readEmail.py": base / "calander" / "readEmail.py",
+        "calendar/prompt.txt": base / "calander" / "prompt.txt",
     }
 
     all_exist = True
@@ -110,7 +110,7 @@ def test_app_imports():
     print_header("Flask App Import Test")
 
     sys.path.insert(0, '/Users/shubh/Desktop/Project-Helix/Project')
-    sys.path.insert(0, '/Users/shubh/Desktop/Project-Helix/Project/calander')
+    sys.path.insert(0, '/Users/shubh/Desktop/Project-Helix-2/Project/calendar')
 
     try:
         from app import app, EMAIL_PARSING_ENABLED
@@ -192,7 +192,7 @@ def test_google_credentials():
     """Check Google Calendar credentials"""
     print_header("Google Calendar Credentials Check")
 
-    cred_path = Path("/Users/shubh/Desktop/Project-Helix/Project/calander/credentials.json")
+    cred_path = Path("/Users/shubh/Desktop/Project-Helix-2/Project/calendar/credentials.json")
 
     if cred_path.exists():
         print_success("credentials.json exists")
@@ -278,7 +278,7 @@ def run_all_tests():
         print_info("To enable Google Calendar:")
         print_info("  1. Read SIMPLE_SETUP.md")
         print_info("  2. Get credentials.json from Google Cloud")
-        print_info("  3. Place in Project/calander/credentials.json")
+        print_info("  3. Place in Project/calendar/credentials.json")
 
     if not results['playwright']:
         print_info("To enable web scraping:")

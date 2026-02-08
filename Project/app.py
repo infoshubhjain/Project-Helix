@@ -10,8 +10,8 @@ import json
 # Base directory for this module
 BASE_DIR = Path(__file__).resolve().parent
 
-# Add the calander directory to the Python path so we can import from readEmail
-sys.path.append(os.path.join(os.path.dirname(__file__), 'calander'))
+# Add the calendar directory to the Python path so we can import from readEmail
+sys.path.append(os.path.join(os.path.dirname(__file__), 'calendar'))
 
 from readEmail import (
     fetch_emails,

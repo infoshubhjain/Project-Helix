@@ -75,7 +75,7 @@ Preserve URLs and email addresses.
 
 Set to same as title if no additional details exist.
 
-If the event does not seem like something that would be added to a personal calander explicitly add the keyword "JUNK" to the begining of the description
+If the event does not seem like something that would be added to a personal calendar explicitly add the keyword "JUNK" to the begining of the description
 
 Missing Information:
 
