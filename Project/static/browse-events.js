@@ -42,11 +42,30 @@ document.addEventListener("DOMContentLoaded", function() {
   let displayedCount = 0; // How many events are currently shown
   const EVENTS_PER_PAGE = 30; // Show 30 events at a time
 
+  // ========== Skeleton loading ==========
+  function showSkeleton(container) {
+    const count = 6;
+    let html = '';
+    for (let i = 0; i < count; i++) {
+      html += `
+        <div class="skeleton-card">
+          <div class="skeleton skeleton-line short"></div>
+          <div class="skeleton skeleton-line title"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton-footer">
+            <div class="skeleton skeleton-tag"></div>
+            <div class="skeleton skeleton-btn"></div>
+          </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+  }
+
   // ========== STEP 1: Load Events ==========
-  // Convert the events object from the server into an array
   async function loadEvents() {
+    showSkeleton(browseContainer);
     try {
-        // Fetch events from the /events endpoint
         const eventsRef = ref(db, "scraped_events");
         const snapshot = await get(eventsRef);
         
@@ -55,39 +74,38 @@ document.addEventListener("DOMContentLoaded", function() {
             eventsData =  snapshot.val();
         }
 
-        // Check if we got data back
         if (!eventsData || Object.keys(eventsData).length === 0) {
-            console.log('No events found');
             browseContainer.innerHTML = '<p class="no-events-text">No events available</p>';
             return;
         }
 
-        // Loop through each event and add it to our array
         for (let id in eventsData) {
             let event = eventsData[id];
-            event.id = id; // Add the ID to the event
-
-            // Convert ISO datetime format to display format
+            event.id = id;
             event = parseEventData(event);
-
-            // Skip events that already happened
-            if (isEventInPast(event)) {
-            continue;
-            }
-
+            if (isEventInPast(event)) continue;
             allEvents.push(event);
         }
 
-        // Sort events by date and time
         sortEventsByTime();
-
-        // Now that we have all events, set up the page
         setupCategories();
         displayEvents(allEvents);
     } catch (error) {
         console.error('Error loading events:', error);
-        browseContainer.innerHTML = '<p style="text-align: center; color: #888;">Error loading events</p>';
+        browseContainer.innerHTML = '<p class="no-events-text">Error loading events. Please try again.</p>';
     }
+  }
+
+  // Map tag name to CSS class for distinct category colors (WCAG-friendly)
+  function getTagClass(tag) {
+    if (!tag) return 'tag-general';
+    const t = tag.toLowerCase();
+    if (t.includes('athletic')) return 'tag-athletics';
+    if (t.includes('academic')) return 'tag-academic';
+    if (t.includes('art')) return 'tag-arts';
+    if (t.includes('sport')) return 'tag-sports';
+    if (t.includes('entertainment')) return 'tag-entertainment';
+    return 'tag-general';
   }
 
   // ========== Parse Event Data ==========
@@ -188,31 +206,59 @@ document.addEventListener("DOMContentLoaded", function() {
     return eventDate < today;
   }
 
-  // ========== STEP 2: Setup Category Filter ==========
-  // Find all unique categories and add them to the dropdown
+  // ========== STEP 2: Setup Category Filter (dropdown + chips) ==========
   function setupCategories() {
-    let categories = []; // Empty list to store unique categories
-
-    // Go through each event
+    let categories = [];
     for (let i = 0; i < allEvents.length; i++) {
       let tag = allEvents[i].tag;
-
-      // Only add if category exists and isn't already in our list
-      if (tag && !categories.includes(tag)) {
-        categories.push(tag);
-      }
+      if (tag && !categories.includes(tag)) categories.push(tag);
     }
-
-    // Sort categories alphabetically
     categories.sort();
 
-    // Add each category to the dropdown
+    // Dropdown
     for (let i = 0; i < categories.length; i++) {
       let option = document.createElement('option');
       option.value = categories[i];
       option.textContent = categories[i];
       categorySelect.appendChild(option);
     }
+
+    // Horizontal filter chips
+    const chipsContainer = document.getElementById('filter-chips');
+    if (!chipsContainer) return;
+
+    const allChip = document.createElement('button');
+    allChip.type = 'button';
+    allChip.className = 'filter-chip active';
+    allChip.textContent = 'All';
+    allChip.setAttribute('data-category', 'all');
+    allChip.addEventListener('click', () => {
+      categorySelect.value = 'all';
+      searchEvents();
+      setActiveChip('all');
+    });
+    chipsContainer.appendChild(allChip);
+
+    categories.forEach(cat => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'filter-chip';
+      chip.textContent = cat;
+      chip.setAttribute('data-category', cat);
+      chip.addEventListener('click', () => {
+        categorySelect.value = cat;
+        searchEvents();
+        setActiveChip(cat);
+      });
+      chipsContainer.appendChild(chip);
+    });
+  }
+
+  function setActiveChip(value) {
+    const chips = document.querySelectorAll('.filter-chip');
+    chips.forEach(c => {
+      c.classList.toggle('active', c.getAttribute('data-category') === value);
+    });
   }
 
   // ========== STEP 3: Display Events ==========
@@ -271,43 +317,40 @@ document.addEventListener("DOMContentLoaded", function() {
     displayEvents(currentlyDisplayedEvents, true);
   }
 
-  // ========== STEP 4: Create a Single Event Card ==========
+  // ========== STEP 4: Create a Single Event Card (glass style) ==========
+  const syncIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
+
   function createEventCard(event) {
-    // Create the card container
     let card = document.createElement('div');
     card.className = 'event-card-browse';
 
-    // Set time value to 'All Day' if the event lasts the whole day; else make it the start time
-    let time = event.start_time
-    if (event.start_time == "12:00 AM" && event.end_time == "11:59 PM") {
-        time = "All Day"
-    }
+    let time = event.start_time;
+    if (event.start_time == "12:00 AM" && event.end_time == "11:59 PM") time = "All Day";
 
-    // Build the HTML for the card
-    let html = '<div class="event-card-title">' + (event.summary || 'Untitled Event') + '</div>';
-    html += '<div class="event-card-info"><strong>📅</strong><span>' + (event.start_date || 'Date TBA') + '</span></div>';
-    html += '<div class="event-card-info"><strong>🕐</strong><span>' + (time || 'Time TBA') + '</span></div>';
-    html += '<div class="event-card-info"><strong>📍</strong><span>' + (event.location || 'Location TBA') + '</span></div>';
-    html += '<div class="event-card-footer">';
-    html += '  <span class="event-tag">' + (event.tag || 'General') + '</span>';
-    html += '  <div class="card-actions">';
-    html += '    <button class="show-more-btn">Details</button>';
-    html += '    <button class="add-to-calendar-btn">+ Add</button>';
-    html += '  </div>';
+    const tag = event.tag || 'General';
+    const tagClass = getTagClass(tag);
+    const dateStr = event.start_date || 'Date TBA';
+    const timeStr = time || 'Time TBA';
+    const locationStr = event.location || 'Location TBA';
+    const title = (event.summary || 'Untitled Event').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    let html = '<div class="event-card-meta">';
+    html += '<span>📅 ' + dateStr + '</span>';
+    html += '<span>🕐 ' + timeStr + '</span>';
     html += '</div>';
+    html += '<div class="event-card-title">' + title + '</div>';
+    html += '<div class="event-card-info"><strong>📍</strong><span>' + locationStr + '</span></div>';
+    html += '<div class="event-card-footer">';
+    html += '<span class="event-tag ' + tagClass + '">' + tag.replace(/</g, '&lt;') + '</span>';
+    html += '<div class="card-actions">';
+    html += '<button type="button" class="show-more-btn">Details</button>';
+    html += '<button type="button" class="add-to-calendar-btn" title="Add to Google Calendar">' + syncIcon + '</button>';
+    html += '</div></div>';
 
     card.innerHTML = html;
 
-    // Add click handlers to the buttons
-    let detailsButton = card.querySelector('.show-more-btn');
-    detailsButton.onclick = function() {
-      showEventDetails(event);
-    };
-
-    let addButton = card.querySelector('.add-to-calendar-btn');
-    addButton.onclick = function() {
-      addToCalendar(event);
-    };
+    card.querySelector('.show-more-btn').onclick = (e) => { e.stopPropagation(); showEventDetails(event); };
+    card.querySelector('.add-to-calendar-btn').onclick = (e) => { e.stopPropagation(); addToCalendar(event); };
 
     return card;
   }
@@ -326,7 +369,9 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     document.getElementById('detail-location').textContent = event.location || 'TBA';
-    document.getElementById('detail-tag').textContent = event.tag || 'General';
+    const detailTag = document.getElementById('detail-tag');
+    detailTag.textContent = event.tag || 'General';
+    detailTag.className = 'event-tag ' + getTagClass(event.tag);
     document.getElementById('detail-description').textContent = event.description || 'No description available.';
 
     // Set the event link if it exists
@@ -445,8 +490,11 @@ document.addEventListener("DOMContentLoaded", function() {
   // When user types in search box
   searchInput.addEventListener('input', searchEvents);
 
-  // When user changes category dropdown
-  categorySelect.addEventListener('change', searchEvents);
+  // When user changes category dropdown, sync chips
+  categorySelect.addEventListener('change', () => {
+    searchEvents();
+    setActiveChip(categorySelect.value);
+  });
 
   // When user clicks X to close modal
   closeButton.addEventListener('click', function() {

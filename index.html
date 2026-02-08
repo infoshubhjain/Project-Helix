@@ -12,21 +12,22 @@
 </head>
 <body>
   <div class="container">
-    <header>
+    <header class="navbar">
       <div class="header-logo">
         <img src="Project/static/images/Illinois_Block_I.png" alt="Illinois Block I" class="logo-img">
         <img src="Project/static/images/favicon.png" alt="Project Helix Logo" class="logo-img">
         <h1>Project Helix @ Illinois</h1>
       </div>
       <div class="header-buttons">
-      <!-- Connection Status and Button -->
-        <button id="connect-calendar-btn" class="connect-btn">
-          🔗 Connect Your Google Calendar
-        </button>
+        <button id="connect-calendar-btn" class="connect-btn">Connect Google Calendar</button>
         <span id="connection-status" style="display: none;">
-          ✅ Connected as <span id="user-email"></span>
+          <span id="user-email"></span>
           <button id="disconnect-btn" class="disconnect-btn">Disconnect</button>
         </span>
+        <button id="theme-toggle" class="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle theme">
+          <span class="icon-sun" aria-hidden="true">☀️</span>
+          <span class="icon-moon" aria-hidden="true">🌙</span>
+        </button>
       </div>
     </header>
 
@@ -88,14 +89,15 @@
           <h3>Browse Events Near UIUC</h3>
           <div class="search-filter">
             <input type="text" id="search-events" placeholder="Search events..." />
-            <select id="filter-category">
+            <select id="filter-category" aria-label="Filter by category">
               <option value="all">All Categories</option>
             </select>
+            <button id="export-ical-btn" class="export-btn" title="Export to iCal">iCal</button>
+            <button id="export-csv-btn" class="export-btn" title="Export to CSV">CSV</button>
           </div>
         </div>
-        <div id="browse-events" class="browse-container">
-          <!-- Events will be dynamically loaded here -->
-        </div>
+        <div id="filter-chips" class="filter-chips" role="tablist" aria-label="Filter by category"></div>
+        <div id="browse-events" class="browse-container"></div>
       </section>
     </div>
 

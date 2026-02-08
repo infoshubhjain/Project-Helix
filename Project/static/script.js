@@ -223,40 +223,21 @@ function toggleDarkMode() {
   );
 }
 
-// Update dark mode button appearance
+// Update theme toggle appearance (single navbar toggle)
 function updateDarkModeButton(isDark) {
-  // Update browse section button
-  const btn = document.getElementById('dark-mode-toggle');
+  const btn = document.getElementById('theme-toggle');
   if (btn) {
-    btn.textContent = isDark ? '☀️' : '🌙';
+    btn.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
     btn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
-  }
-
-  // Update header button
-  const headerBtn = document.getElementById('dark-mode-toggle-header');
-  if (headerBtn) {
-    headerBtn.textContent = isDark ? '☀️' : '🌙';
-    headerBtn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
   }
 }
 
-// Set up dark mode toggle button
+// Set up theme toggle (navbar)
 document.addEventListener('DOMContentLoaded', () => {
   initDarkMode();
-
-  // Browse section dark mode button
-  const darkModeBtn = document.getElementById('dark-mode-toggle');
-  if (darkModeBtn) {
-    darkModeBtn.addEventListener('click', toggleDarkMode);
-  }
-
-  // Header dark mode button
-  const headerDarkModeBtn = document.getElementById('dark-mode-toggle-header');
-  if (headerDarkModeBtn) {
-    headerDarkModeBtn.addEventListener('click', toggleDarkMode);
-    console.log('✅ Header dark mode button initialized');
-  } else {
-    console.warn('⚠️ Header dark mode button not found in DOM');
+  const themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', toggleDarkMode);
   }
 });
 

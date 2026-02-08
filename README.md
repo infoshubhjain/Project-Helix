@@ -1,25 +1,29 @@
-# Project Helix @ UIUC
+# 🧬 Project Helix @ UIUC
+
+**The Central Intelligence for Campus Life.**
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/Flask-3.x-green.svg)](https://flask.palletsprojects.com/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> A campus event aggregation platform for UIUC: browse 1000+ events, sync with Google Calendar, and import events from email.
+Project Helix is a campus event aggregation platform for the University of Illinois Urbana-Champaign. It centralizes **1,000+ events** from diverse sources into a single, actionable interface—eliminating calendar fragmentation.
+
+[**Explore Live Demo**](https://infoshubhjain.github.io/Project-Helix/) · [**Quickstart Guide**](QUICKSTART.md) · [**View Architecture**](CLAUDE.md)
 
 **Note:** This project originated from CS 196 (CS 124 Honors) Group 7. It has been customized for personal use. Full credit to the original team.
 
 ---
 
-## Features
+## ✨ Key Features
 
-- **Browse events** — 1000+ events from UIUC calendars, State Farm Center, and Fighting Illini athletics; search, filter, and view details.
-- **Google Calendar** — Connect your calendar, view personal events alongside campus events, add events with one click.
-- **Email-to-event parsing** — Scan Outlook emails with AI-powered extraction and add events to Google Calendar (optional; requires Azure AD + OpenRouter).
-- **Automated scraping** — Playwright/BeautifulSoup scrapers; optional Modal + Firebase pipeline for weekly updates.
+- **🔍 Omni-Source Aggregator** — Real-time scraping of UIUC Campus Calendars, State Farm Center, and Fighting Illini Athletics.
+- **🗓️ Bi-Directional Sync** — View your personal Google Calendar events alongside campus happenings; add new events with one click.
+- **🤖 AI Email Intelligence (Beta)** — Automatically parses event details from Outlook emails using OpenAI/OpenRouter to bridge inbox and schedule.
+- **⚡ Automated Pipeline** — Robust scraping with Playwright and BeautifulSoup; optional cloud-scaling via Modal.
 
 ---
 
-## Tech stack
+## 🛠️ Technical Ecosystem
 
 | Layer | Technologies |
 |-------|--------------|
@@ -31,32 +35,34 @@
 
 ---
 
-## Getting started
+## 🚀 Getting Started
 
-### Prerequisites
+### 1. Environment setup
 
-- Python 3.8+
-- pip
-
-### Install and run
+- Python 3.8+, pip
 
 ```bash
-# Clone the repository
 git clone https://github.com/infoshubhjain/Project-Helix.git
 cd Project-Helix
 
-# Install dependencies
 cd Project
 pip install -r requirements.txt
 playwright install chromium
+```
 
-# Run the app (from repo root)
+### 2. Launching the platform
+
+From the repo root:
+
+```bash
 ./run.sh
 ```
 
-Then open **http://localhost:5001**. Browsing events works without any credentials.
+**Access the dashboard at:** [http://localhost:5001](http://localhost:5001)
 
-### Using a virtual environment (recommended)
+Browsing events works immediately with no credentials.
+
+**Optional — virtual environment:**
 
 ```bash
 cd Project
@@ -70,48 +76,7 @@ cd ..
 
 ---
 
-## Usage
-
-### Local development
-
-```bash
-./run.sh
-# or
-cd Project && python3 app.py
-```
-
-### Run scrapers
-
-```bash
-# Local (no database upload)
-cd Project && python3 scrape.py
-
-# Production with Modal (uploads to Firebase)
-cd Project && modal run scrape.py
-```
-
-### Validate app (smoke test)
-
-```bash
-python3 test_app.py
-# or, if you add the Makefile: make test
-```
-
----
-
-## Credentials (optional)
-
-| Feature | Credentials | Guide |
-|---------|-------------|--------|
-| Email import | Azure AD + OpenRouter | [CREDENTIALS_GUIDE.md](CREDENTIALS_GUIDE.md) |
-| Google Calendar | Google Cloud OAuth | [CREDENTIALS_GUIDE.md](CREDENTIALS_GUIDE.md) |
-
-- Copy `Project/.env.example` to `Project/.env` and fill in values.
-- For Google Calendar, place `credentials.json` in `Project/calander/` (see CREDENTIALS_GUIDE.md).
-
----
-
-## Project structure
+## 📂 Repository Anatomy
 
 ```
 Project-Helix/
@@ -127,17 +92,39 @@ Project-Helix/
 │   ├── static/                # JS, CSS, images
 │   ├── calander/              # Google Calendar + email parsing
 │   └── email_parser/
-├── docs/                      # Additional documentation
-└── .env.example / Project/.env.example
+└── .env.example, Project/.env.example
 ```
 
 ---
 
-## Live demo
+## 🔑 Configuration & Security
 
-**https://infoshubhjain.github.io/Project-Helix/**
+Helix works **out-of-the-box** for event browsing. To unlock Google Calendar and AI email parsing, follow the [**Credentials Guide**](CREDENTIALS_GUIDE.md).
 
-GitHub Pages serves the static `index.html` with Google Calendar integration and persistent auth.
+| Step | Action |
+|------|--------|
+| **Environment** | Rename `Project/.env.example` to `Project/.env` and fill in values. |
+| **Google Cloud** | Place `credentials.json` in `Project/calander/`. |
+| **AI parsing** | Add your OpenRouter API key to `Project/.env`. |
+
+---
+
+## Usage
+
+**Local dev:** `./run.sh` or `cd Project && python3 app.py`
+
+**Scrapers (local):** `cd Project && python3 scrape.py`  
+**Scrapers (Modal):** `cd Project && modal run scrape.py`
+
+**Smoke test:** `python3 test_app.py` or `make test`
+
+---
+
+## 🌐 Live Demo
+
+**[https://infoshubhjain.github.io/Project-Helix/](https://infoshubhjain.github.io/Project-Helix/)**
+
+GitHub Pages serves the app with Google Calendar integration and persistent auth.
 
 ---
 
@@ -153,16 +140,16 @@ GitHub Pages serves the static `index.html` with Google Calendar integration and
 
 ## Contributing
 
-Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and code style.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
 ## License
 
-This project is licensed under the MIT License — see [LICENSE](LICENSE).
+MIT License — see [LICENSE](LICENSE).
 
 ---
 
 ## Links
 
-- [Flask](https://flask.palletsprojects.com/) · [Google Calendar API](https://developers.google.com/calendar) · [Microsoft Graph](https://docs.microsoft.com/en-us/graph/) · [Modal](https://modal.com/) · [Firebase](https://firebase.google.com/)
+[Flask](https://flask.palletsprojects.com/) · [Google Calendar API](https://developers.google.com/calendar) · [Microsoft Graph](https://docs.microsoft.com/en-us/graph/) · [Modal](https://modal.com/) · [Firebase](https://firebase.google.com/)
