@@ -51,20 +51,52 @@ def parse_month_to_number(month_str):
         return datetime.strptime(month_str, "%b").month
 
 def detect_free_food(event_info):
-    """Check if event mentions free food and update tag if so."""
+    """Check if event mentions free food or is at a food-likely location."""
     FREE_FOOD_KEYWORDS = [
+        # Single high-confidence words
+        "pizza", "lunch", "dinner", "breakfast", "brunch", "snacks", "refreshments",
+        "cookies", "donuts", "bagels", "coffee", "meal", "food",
+        # Explicit free food mentions
         "free food", "free pizza", "free lunch", "free dinner", "free breakfast",
-        "lunch provided", "dinner provided", "food will be served", "refreshments",
-        "snacks provided", "free snacks", "complimentary food", "free meal"
+        "lunch provided", "dinner provided", "food will be served", 
+        "snacks provided", "free snacks", "complimentary food", "free meal",
+        # Common college food event patterns
+        "pizza party", "food included", "lunch included", "dinner included",
+        "continental breakfast", "catered", "potluck", "bbq", "cookout",
+        "reception with food", "cookies and", "donuts", "bagels", "coffee and",
+        # Social/mixer events often have food
+        "social hour", "networking lunch", "luncheon", "banquet", "mixer",
+        "tailgate", "picnic", "fest", "supper", "banquet", "buffet",
+        # Workshop/info session food
+        "lunch will be provided", "refreshments will be", "light refreshments",
+        "food and drinks"
     ]
+    
+    # Location tags that often mean food (UIUC/Champaign specific)
+    FOOD_LOCATIONS = [
+        "Dining Hall", "Restaurant", "Cafe", "Kitchen", "Union Basement", 
+        "Coffee Shop", "Bakery", "Grill", "Pub", "Tavern", "Snack Bar"
+    ]
+
     text_to_check = (
-        (event_info.get("summary", "") + " " + event_info.get("description", ""))
+        (event_info.get("summary", "") + " " + event_info.get("description", "") + " " + event_info.get("location", ""))
         .lower()
     )
+    
+    # Check keywords
     for keyword in FREE_FOOD_KEYWORDS:
         if keyword in text_to_check:
             event_info["tag"] = "Free Food 🍕"
             return event_info
+            
+    # Check locations if summary implies a social event
+    summary_lower = event_info.get("summary", "").lower()
+    if any(k in summary_lower for k in ["social", "meeting", "workshop", "information", "gathering"]):
+        for loc in FOOD_LOCATIONS:
+            if loc.lower() in text_to_check:
+                event_info["tag"] = "Free Food 🍕"
+                return event_info
+                
     return event_info
 #-----------------------SCRAPERS-----------------------#
 # Individual Scrapers

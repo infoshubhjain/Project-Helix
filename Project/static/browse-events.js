@@ -77,6 +77,7 @@ document.addEventListener("DOMContentLoaded", function () {
         threshold: 0.4, // Lower = stricter matching
         ignoreLocation: true
       });
+      console.log('Project Helix: Fuse.js initialized with ' + allEvents.length + ' events.');
 
       displayEvents(allEvents);
     } catch (error) {
@@ -447,6 +448,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (searchText !== '' && fuse) {
       const fuseResults = fuse.search(searchText);
       searchResults = fuseResults.map(result => result.item);
+      console.log('Project Helix: Fuzzy search for "' + searchText + '" returned ' + searchResults.length + ' results.');
     }
 
     // Apply category filter
