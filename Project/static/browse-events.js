@@ -1,31 +1,7 @@
 // ** CO-AUTHORED BY CLAUDE CODE ** //
 
-// Initialize Firebase
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
-// Import export functions
-import { exportToICal, exportToCSV } from './export.js';
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-apiKey: "AIzaSyAKfE_dl9zp5U_BVaqOmsdbjKjb-2KOlFA",
-authDomain: "eventflowdatabase.firebaseapp.com",
-databaseURL: "https://eventflowdatabase-default-rtdb.firebaseio.com",
-projectId: "eventflowdatabase",
-storageBucket: "eventflowdatabase.firebasestorage.app",
-messagingSenderId: "611561258590",
-appId: "1:611561258590:web:16a4d352f06bdbbfad3ecf",
-measurementId: "G-0C45LS13MN"
-};
-
-  // Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
 // Wait for the page to fully load before running our code
-document.addEventListener("DOMContentLoaded", function() {
+document.addEventListener("DOMContentLoaded", function () {
 
   // Get references to HTML elements we'll use
   const browseContainer = document.getElementById("browse-events");
@@ -66,33 +42,35 @@ document.addEventListener("DOMContentLoaded", function() {
   async function loadEvents() {
     showSkeleton(browseContainer);
     try {
-        const eventsRef = ref(db, "scraped_events");
-        const snapshot = await get(eventsRef);
-        
-        let eventsData = null;
-        if (snapshot.exists()) {
-            eventsData =  snapshot.val();
-        }
+      // Fetch from static JSON file instead of Firebase
+      // The file is committed to the repo by the scraper
+      const response = await fetch('../scraped_events.json');
 
-        if (!eventsData || Object.keys(eventsData).length === 0) {
-            browseContainer.innerHTML = '<p class="no-events-text">No events available</p>';
-            return;
-        }
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-        for (let id in eventsData) {
-            let event = eventsData[id];
-            event.id = id;
-            event = parseEventData(event);
-            if (isEventInPast(event)) continue;
-            allEvents.push(event);
-        }
+      const eventsData = await response.json();
 
-        sortEventsByTime();
-        setupCategories();
-        displayEvents(allEvents);
+      if (!eventsData || Object.keys(eventsData).length === 0) {
+        browseContainer.innerHTML = '<p class="no-events-text">No events available</p>';
+        return;
+      }
+
+      for (let id in eventsData) {
+        let event = eventsData[id];
+        event.id = id;
+        event = parseEventData(event);
+        if (isEventInPast(event)) continue;
+        allEvents.push(event);
+      }
+
+      sortEventsByTime();
+      setupCategories();
+      displayEvents(allEvents);
     } catch (error) {
-        console.error('Error loading events:', error);
-        browseContainer.innerHTML = '<p class="no-events-text">Error loading events. Please try again.</p>';
+      console.error('Error loading events:', error);
+      browseContainer.innerHTML = '<p class="no-events-text">Error loading events. Please try again later.</p>';
     }
   }
 
@@ -363,9 +341,9 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // Set time value to 'All Day' if the event lasts the whole day; else make it time listed in the event data
     if (event.start_time == "12:00 AM" && event.end_time == "11:59 PM") {
-        document.getElementById('detail-time').textContent = "All Day";
+      document.getElementById('detail-time').textContent = "All Day";
     } else {
-        document.getElementById('detail-time').textContent = (event.start_time || '') + ' - ' + (event.end_time || '');
+      document.getElementById('detail-time').textContent = (event.start_time || '') + ' - ' + (event.end_time || '');
     }
 
     document.getElementById('detail-location').textContent = event.location || 'TBA';
@@ -497,12 +475,12 @@ document.addEventListener("DOMContentLoaded", function() {
   });
 
   // When user clicks X to close modal
-  closeButton.addEventListener('click', function() {
+  closeButton.addEventListener('click', function () {
     detailModal.style.display = 'none';
   });
 
   // When user clicks outside modal, close it
-  detailModal.addEventListener('click', function(event) {
+  detailModal.addEventListener('click', function (event) {
     if (event.target === detailModal) {
       detailModal.style.display = 'none';
     }

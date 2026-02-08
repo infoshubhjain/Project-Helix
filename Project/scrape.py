@@ -449,30 +449,15 @@ if modal is not None and firebase_admin is not None:
         run_scraper.remote()
 
 def main():
-    if os.environ.get("SAVE_TO_FIREBASE") == "true":
-        # Initialize Firebase from env var
-        if firebase_admin and not firebase_admin._apps:
-            cred_content = os.environ.get("FIREBASE_CREDENTIALS")
-            if cred_content:
-                cred_dict = json.loads(cred_content)
-                cred = credentials.Certificate(cred_dict)
-                firebase_admin.initialize_app(cred, {
-                    "databaseURL": os.environ.get("FIREBASE_DATABASE_URL", "https://eventflowdatabase-default-rtdb.firebaseio.com"),
-                })
+    print("Scraping events...")
+    data = scrape()
+    
+    # Save to JSON file
+    output_file = os.path.join(os.path.dirname(__file__), "scraped_events.json")
+    with open(output_file, "w") as f:
+        json.dump(data, f, indent=4)
         
-        if firebase_admin:
-            ref = db.reference("scraped_events")
-            print("Scraping events...")
-            scraped_data = scrape()
-            ref.set(scraped_data)
-            print(f"Scraper completed! Saved {len(scraped_data)} events to Firebase.")
-        else:
-            print("Firebase Admin SDK not installed or configured.")
-    else:
-        # Local run
-        data = scrape()
-        print(f"Scraped {len(data)} events (local run; not saved to Firebase).")
-        return data
-
+    print(f"Scraped {len(data)} events. Saved to {output_file}")
+    
 if __name__ == "__main__":
     main()
