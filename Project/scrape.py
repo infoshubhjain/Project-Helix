@@ -324,7 +324,13 @@ def scrape_athletics():
                         if date_match:
                             month = date_match.group(1)
                             day = int(date_match.group(2))
-                            year = datetime.now().year + 1 if month in ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"] else datetime.now().year
+                            month_num = parse_month_to_number(month)
+                            current_month = datetime.now().month
+                            current_year = datetime.now().year
+                            if current_month >= 8 and month_num < 8:
+                                year = current_year + 1
+                            else:
+                                year = current_year
                             start_dt = None
                             if len(date_spans) >= 2 and date_spans[1].text:
                                 time_match = re.search(r"(\d{1,2}):?(\d{2})?\s*(am|pm)", date_spans[1].text, re.IGNORECASE)

@@ -296,10 +296,13 @@ def scrape_athletics():
                         month = date_match.group(1)
                         day = int(date_match.group(2))
 
-                        if month in ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"]:
-                            year = datetime.now().year + 1
+                        month_num = parse_month_to_number(month)
+                        current_month = datetime.now().month
+                        current_year = datetime.now().year
+                        if current_month >= 8 and month_num < 8:
+                            year = current_year + 1
                         else:
-                            year = datetime.now().year
+                            year = current_year
 
                         if time_match := re.search(r"(\d{1,2}):?(\d{2})?\s*(am|pm)", date_info[1].text, re.IGNORECASE):
                             hour = int(time_match.group(1))
