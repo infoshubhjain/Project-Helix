@@ -30,7 +30,11 @@ GENERAL_CALENDAR_LINKS = [
     "https://calendars.illinois.edu/list/597",
     "https://calendars.illinois.edu/list/637",
     "https://calendars.illinois.edu/list/4757",
-    "https://calendars.illinois.edu/list/598"
+    "https://calendars.illinois.edu/list/598",
+    "https://calendars.illinois.edu/list/2568",
+    "https://calendars.illinois.edu/list/4063",
+    "https://calendars.illinois.edu/list/5510",
+    "https://calendars.illinois.edu/list/4092"
 ]
 STATE_FARM_CENTER_CALENDAR_LINK = "https://www.statefarmcenter.com/events/all"
 ATHLETIC_TICKET_LINKS = [
