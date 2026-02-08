@@ -452,10 +452,10 @@ def main():
     print("Scraping events...")
     data = scrape()
     
-    # Save to JSON file
+    # Save to JSON file (minified for faster loading)
     output_file = os.path.join(os.path.dirname(__file__), "scraped_events.json")
     with open(output_file, "w") as f:
-        json.dump(data, f, indent=4)
+        json.dump(data, f, separators=(',', ':'))
         
     print(f"Scraped {len(data)} events. Saved to {output_file}")
     
