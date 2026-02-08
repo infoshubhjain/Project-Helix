@@ -149,6 +149,7 @@ def scrape_general():
                                 else:
                                     # Handle time range: "9:00 am - 12:00 pm" or "9:00 am"
                                     # Normalize string
+                                    original_time_str = time_str
                                     time_str = time_str.replace(".", "").lower() # 9:00 a.m. -> 9:00 am
                                     
                                     # Regex for range
@@ -167,10 +168,12 @@ def scrape_general():
                                         
                                         start_dt = current_date_obj.replace(hour=sh, minute=sm)
                                         end_dt = current_date_obj.replace(hour=eh, minute=em)
+                                        
                                     else:
                                         # Single time
                                         single_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", time_str)
                                         if single_match:
+                                            # ... (existing code)
                                             sh, sm, s_mer = single_match.groups()
                                             sh, sm = int(sh), int(sm)
                                             if s_mer == "pm" and sh != 12: sh += 12
@@ -446,9 +449,30 @@ if modal is not None and firebase_admin is not None:
         run_scraper.remote()
 
 def main():
-    data = scrape()
-    print(f"Scraped {len(data)} events (local run; not saved to Firebase).")
-    return data
+    if os.environ.get("SAVE_TO_FIREBASE") == "true":
+        # Initialize Firebase from env var
+        if firebase_admin and not firebase_admin._apps:
+            cred_content = os.environ.get("FIREBASE_CREDENTIALS")
+            if cred_content:
+                cred_dict = json.loads(cred_content)
+                cred = credentials.Certificate(cred_dict)
+                firebase_admin.initialize_app(cred, {
+                    "databaseURL": os.environ.get("FIREBASE_DATABASE_URL", "https://eventflowdatabase-default-rtdb.firebaseio.com"),
+                })
+        
+        if firebase_admin:
+            ref = db.reference("scraped_events")
+            print("Scraping events...")
+            scraped_data = scrape()
+            ref.set(scraped_data)
+            print(f"Scraper completed! Saved {len(scraped_data)} events to Firebase.")
+        else:
+            print("Firebase Admin SDK not installed or configured.")
+    else:
+        # Local run
+        data = scrape()
+        print(f"Scraped {len(data)} events (local run; not saved to Firebase).")
+        return data
 
 if __name__ == "__main__":
     main()
