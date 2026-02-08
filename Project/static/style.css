@@ -42,6 +42,7 @@
   --tag-arts: #DB2777;
   --tag-sports: #059669;
   --tag-entertainment: #D97706;
+  --tag-freefood: #F59E0B;
   --tag-default: #475569;
 }
 
@@ -587,6 +588,7 @@ body.dark-mode .theme-toggle .icon-moon {
 .event-tag.tag-arts { background: var(--tag-arts); }
 .event-tag.tag-sports { background: var(--tag-sports); }
 .event-tag.tag-entertainment { background: var(--tag-entertainment); }
+.event-tag.tag-freefood { background: var(--tag-freefood); }
 .event-tag.tag-general { background: var(--tag-general); }
 
 .card-actions {

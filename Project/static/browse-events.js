@@ -18,6 +18,9 @@ document.addEventListener("DOMContentLoaded", function () {
   let displayedCount = 0; // How many events are currently shown
   const EVENTS_PER_PAGE = 30; // Show 30 events at a time
 
+  // Fuse.js instance for fuzzy search
+  let fuse = null;
+
   // ========== Skeleton loading ==========
   function showSkeleton(container) {
     const count = 6;
@@ -67,6 +70,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
       sortEventsByTime();
       setupCategories();
+
+      // Initialize Fuse.js for fuzzy search
+      fuse = new Fuse(allEvents, {
+        keys: ['summary', 'description', 'location'],
+        threshold: 0.4, // Lower = stricter matching
+        ignoreLocation: true
+      });
+
       displayEvents(allEvents);
     } catch (error) {
       console.error('Error loading events:', error);
@@ -78,6 +89,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function getTagClass(tag) {
     if (!tag) return 'tag-general';
     const t = tag.toLowerCase();
+    if (t.includes('free food')) return 'tag-freefood';
     if (t.includes('athletic')) return 'tag-athletics';
     if (t.includes('academic')) return 'tag-academic';
     if (t.includes('art')) return 'tag-arts';
@@ -424,27 +436,22 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // ========== STEP 7: Search Function ==========
-  // Filter events based on search text
+  // Filter events based on search text (using Fuse.js for fuzzy matching)
   function searchEvents() {
-    let searchText = searchInput.value.toLowerCase();
+    let searchText = searchInput.value.trim();
     let selectedCategory = categorySelect.value;
     let filtered = [];
 
-    // Go through all events
-    for (let i = 0; i < allEvents.length; i++) {
-      let event = allEvents[i];
+    // Use Fuse.js for fuzzy search if there's search text
+    let searchResults = allEvents;
+    if (searchText !== '' && fuse) {
+      const fuseResults = fuse.search(searchText);
+      searchResults = fuseResults.map(result => result.item);
+    }
 
-      // Check if event matches search text
-      let matchesSearch = false;
-      if (searchText === '') {
-        matchesSearch = true; // Empty search matches everything
-      } else if (event.summary && event.summary.toLowerCase().includes(searchText)) {
-        matchesSearch = true;
-      } else if (event.description && event.description.toLowerCase().includes(searchText)) {
-        matchesSearch = true;
-      } else if (event.location && event.location.toLowerCase().includes(searchText)) {
-        matchesSearch = true;
-      }
+    // Apply category filter
+    for (let i = 0; i < searchResults.length; i++) {
+      let event = searchResults[i];
 
       // Check if event matches selected category
       let matchesCategory = false;
@@ -454,8 +461,7 @@ document.addEventListener("DOMContentLoaded", function () {
         matchesCategory = true;
       }
 
-      // If both match, add to filtered list
-      if (matchesSearch && matchesCategory) {
+      if (matchesCategory) {
         filtered.push(event);
       }
     }

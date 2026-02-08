@@ -49,6 +49,23 @@ def parse_month_to_number(month_str):
         return datetime.strptime(month_str, "%B").month
     except ValueError:
         return datetime.strptime(month_str, "%b").month
+
+def detect_free_food(event_info):
+    """Check if event mentions free food and update tag if so."""
+    FREE_FOOD_KEYWORDS = [
+        "free food", "free pizza", "free lunch", "free dinner", "free breakfast",
+        "lunch provided", "dinner provided", "food will be served", "refreshments",
+        "snacks provided", "free snacks", "complimentary food", "free meal"
+    ]
+    text_to_check = (
+        (event_info.get("summary", "") + " " + event_info.get("description", ""))
+        .lower()
+    )
+    for keyword in FREE_FOOD_KEYWORDS:
+        if keyword in text_to_check:
+            event_info["tag"] = "Free Food 🍕"
+            return event_info
+    return event_info
 #-----------------------SCRAPERS-----------------------#
 # Individual Scrapers
 def scrape_general():
@@ -195,6 +212,7 @@ def scrape_general():
                                     event_info["end"] = ""
 
                                 # Add to events list
+                                event_info = detect_free_food(event_info)
                                 events[event_count] = event_info
                                 event_count += 1
                                 
@@ -306,6 +324,7 @@ def scrape_state_farm():
                     event_info["end"] = ""
 
                 event_info = {k: (v.strip() if isinstance(v, str) else v) for k, v in event_info.items()}
+                event_info = detect_free_food(event_info)
                 events[event_count] = event_info
                 event_count += 1
 
@@ -396,6 +415,7 @@ def scrape_athletics():
                     event_info["location"] = "Champaign, Ill."
 
                 event_info = {k: (v.strip() if isinstance(v, str) else v) for k, v in event_info.items()}
+                event_info = detect_free_food(event_info)
                 events[event_count] = event_info
                 event_count += 1
             except Exception:
