@@ -274,60 +274,71 @@ def scrape_general():
 def scrape_state_farm():
     global event_count
     events = {}
+    print("\n🔍 Scraping State Farm Center...")
+    print(f"   Link: {STATE_FARM_CENTER_CALENDAR_LINK}")
     try:
+        # Use requests for the initial list as it proved more reliable in tests
+        session = requests.Session()
+        session.headers.update({"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+        
+        response = session.get(STATE_FARM_CENTER_CALENDAR_LINK, timeout=20)
+        if response.status_code != 200:
+            print(f"   ❌ Failed to fetch State Farm Center main page: {response.status_code}")
+            return events
+
+        soup = BeautifulSoup(response.text, "lxml")
+        event_listings = soup.find_all("a", class_="more buttons-hide")
+        if not event_listings:
+             event_listings = soup.select('a[href*="/events/detail/"]')
+        
+        print(f"   Found {len(event_listings)} event listings")
+
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-            page.goto(STATE_FARM_CENTER_CALENDAR_LINK, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_load_state("networkidle", timeout=10000)
-            soup = BeautifulSoup(page.content(), "lxml")
-            event_listings = soup.find_all("a", class_="more buttons-hide")
-            if not event_listings:
-                event_listings = soup.select('a[href*="/events/detail/"]')
+            
             seen_urls = set()
-            for i in range(len(event_listings)):
+            for i, a in enumerate(event_listings):
                 try:
-                    a = event_listings[i]
-                    event_link = a.get("href") or a.attrs.get("href")
+                    event_link = a.get("href")
                     if not event_link or event_link in seen_urls:
                         continue
                     if not event_link.startswith("http"):
                         event_link = "https://www.statefarmcenter.com" + event_link.lstrip("/")
                     seen_urls.add(event_link)
-                except Exception:
-                    continue
 
-                event_info = {}
-                try:
+                    print(f"   [{i+1}/{len(event_listings)}] Detail: {event_link}")
                     page.goto(event_link, wait_until="domcontentloaded", timeout=20000)
-                    soup = BeautifulSoup(page.content(), "lxml")
-                except Exception:
-                    continue
+                    detail_soup = BeautifulSoup(page.content(), "lxml")
 
-                title_el = soup.find("h1", class_="title") or soup.find("h1")
-                event_info["summary"] = title_el.text.strip() if title_el and title_el.text else "State Farm Center Event"
-                event_info["description"] = ""
-                desc = soup.find("div", class_="description_inner")
-                if desc is not None:
-                    ps = desc.find_all("p")
-                    if ps:
+                    event_info = {}
+                    title_el = detail_soup.find("h1", class_="title") or detail_soup.find("h1")
+                    event_info["summary"] = title_el.text.strip() if title_el and title_el.text else "State Farm Center Event"
+                    
+                    event_info["description"] = ""
+                    desc = detail_soup.find("div", class_="description_inner")
+                    if desc:
+                        ps = desc.find_all("p")
                         event_info["description"] = " ".join(p.text for p in ps if p.text).strip()
-                event_info["htmlLink"] = event_link
-                event_info["location"] = "State Farm Center 1800 S 1st St, Champaign, IL 61820"
-                event_info["tag"] = "Entertainment"
+                    
+                    event_info["htmlLink"] = event_link
+                    event_info["location"] = "State Farm Center 1800 S 1st St, Champaign, IL 61820"
+                    event_info["tag"] = "Entertainment"
 
-                try:
-                    sidebar = soup.find("ul", class_="eventDetailList")
+                    sidebar = detail_soup.find("ul", class_="eventDetailList")
                     if sidebar:
                         month_el = sidebar.find("span", class_="m-date__month")
                         day_el = sidebar.find("span", class_="m-date__day")
                         year_el = sidebar.find("span", class_="m-date__year")
+                        
                         if month_el and day_el and year_el:
                             month = month_el.text.strip()
                             day = int(re.sub(r"\D", "", day_el.text.strip()) or "1")
                             year = int(re.sub(r"\D", "", year_el.text.strip()) or str(datetime.now().year))
+                            
                             start_li = sidebar.find("li", class_="item sidebar_event_starts")
                             start_time_str = start_li.find("span").text.strip() if start_li and start_li.find("span") else ""
+                            
                             if re.search(r"\d{1,2}:\d{2}\s*(am|pm)", start_time_str, re.IGNORECASE):
                                 time_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", start_time_str, re.IGNORECASE)
                                 hour = int(time_match.group(1))
@@ -338,120 +349,138 @@ def scrape_state_farm():
                                 elif meridiem == "am" and hour == 12:
                                     hour = 0
                                 start_dt = datetime(year, parse_month_to_number(month), day, hour, minute, tzinfo=ZoneInfo("America/Chicago"))
-                                end_dt = start_dt + timedelta(hours=3)
-                                event_info["start"] = start_dt.isoformat()
-                                event_info["end"] = end_dt.isoformat()
                             else:
+                                # Default to 7PM if time missing but date exists
                                 start_dt = datetime(year, parse_month_to_number(month), day, 19, 0, tzinfo=ZoneInfo("America/Chicago"))
-                                event_info["start"] = start_dt.isoformat()
-                                event_info["end"] = (start_dt + timedelta(hours=3)).isoformat()
+                            
+                            end_dt = start_dt + timedelta(hours=3)
+                            event_info["start"] = start_dt.isoformat()
+                            event_info["end"] = end_dt.isoformat()
                         else:
                             event_info["start"] = ""
                             event_info["end"] = ""
                     else:
                         event_info["start"] = ""
                         event_info["end"] = ""
-                except Exception:
-                    event_info["start"] = ""
-                    event_info["end"] = ""
 
-                event_info = {k: (v.strip() if isinstance(v, str) else v) for k, v in event_info.items()}
-                event_info = detect_free_food(event_info)
-                events[event_count] = event_info
-                event_count += 1
+                    event_info = {k: (v.strip() if isinstance(v, str) else v) for k, v in event_info.items()}
+                    event_info = detect_free_food(event_info)
+                    events[event_count] = event_info
+                    event_count += 1
+
+                except Exception as e:
+                    print(f"      ⚠️  Error processing {event_link}: {e}")
+                    continue
 
             browser.close()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"   ❌ Error in scrape_state_farm: {e}")
     return events
 
 def scrape_athletics():
     global event_count
     session = requests.Session()
-    session.headers.update({"User-Agent": "Mozilla/5.0 (compatible; ProjectHelix/1.0)"})
+    session.headers.update({"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
     events = {}
 
+    print("\n🔍 Scraping Athletics Schedules...")
     for calendar_link in ATHLETIC_TICKET_LINKS:
         try:
-            html_text = session.get(calendar_link, timeout=20).text
-        except Exception:
-            continue
-        soup = BeautifulSoup(html_text, "lxml")
-        event_listings = soup.find_all("li", class_="sidearm-schedule-home-game")
-        if not event_listings:
-            continue
+            print(f"   Scraping {calendar_link}...")
+            response = session.get(calendar_link, timeout=20)
+            if response.status_code != 200:
+                print(f"   ❌ Failed to fetch {calendar_link}: {response.status_code}")
+                continue
+            
+            soup = BeautifulSoup(response.text, "lxml")
+            event_listings = soup.find_all("li", class_="sidearm-schedule-home-game")
+            print(f"      Found {len(event_listings)} home games")
 
-        title_div = soup.find("div", class_="sidearm-schedule-title")
-        sport = "Sport"
-        if title_div:
-            h2 = title_div.find("h2")
-            if h2 and h2.text:
-                m = re.match(r"[\d-]+\s*(.*)\s*Schedule", h2.text)
-                if m:
-                    sport = m.group(1).strip()
+            title_div = soup.find("div", class_="sidearm-schedule-title")
+            sport = "Sport"
+            if title_div:
+                h2 = title_div.find("h2")
+                if h2 and h2.text:
+                    # Match "2023-24 Men's Basketball Schedule" or similar
+                    m = re.search(r"[\d-]+\s*(.*)\s*Schedule", h2.text)
+                    if m:
+                        sport = m.group(1).strip()
 
-        for i in range(len(event_listings)):
-            try:
-                event_info = {"description": "", "tag": "Athletics", "htmlLink": calendar_link}
-                opp_div = event_listings[i].find("div", class_="sidearm-schedule-game-opponent-name")
-                opponent = "Opponent"
-                if opp_div:
-                    a = opp_div.find("a")
-                    if a and a.text:
-                        opponent = a.text.strip()
-                event_info["summary"] = f"{sport} Game: Illinois VS. {opponent}"
+            for i, listing in enumerate(event_listings):
+                try:
+                    event_info = {"description": "", "tag": "Athletics", "htmlLink": calendar_link}
+                    
+                    opp_div = listing.find("div", class_="sidearm-schedule-game-opponent-name")
+                    opponent = "Opponent"
+                    if opp_div:
+                        a_tag = opp_div.find("a")
+                        if a_tag and a_tag.text:
+                            opponent = a_tag.text.strip()
+                        elif opp_div.text:
+                            opponent = opp_div.text.strip()
+                    
+                    event_info["summary"] = f"{sport} Game: Illinois VS. {opponent}"
 
-                date_div = event_listings[i].find("div", class_="sidearm-schedule-game-opponent-date")
-                event_info["start"] = ""
-                event_info["end"] = ""
-                if date_div:
-                    date_spans = date_div.find_all("span")
-                    if len(date_spans) >= 1 and date_spans[0].text:
-                        date_match = re.search(r"(\w+)\s+(\d+)", date_spans[0].text)
-                        if date_match:
-                            month = date_match.group(1)
-                            day = int(date_match.group(2))
-                            month_num = parse_month_to_number(month)
-                            current_month = datetime.now().month
-                            current_year = datetime.now().year
-                            if current_month >= 8 and month_num < 8:
-                                year = current_year + 1
-                            else:
-                                year = current_year
-                            start_dt = None
-                            if len(date_spans) >= 2 and date_spans[1].text:
-                                time_match = re.search(r"(\d{1,2}):?(\d{2})?\s*(am|pm)", date_spans[1].text, re.IGNORECASE)
-                                if time_match:
-                                    hour = int(time_match.group(1))
-                                    minute = int(time_match.group(2)) if time_match.group(2) else 0
-                                    meridiem = time_match.group(3).lower()
-                                    if meridiem == "pm" and hour != 12:
-                                        hour += 12
-                                    elif meridiem == "am" and hour == 12:
-                                        hour = 0
-                                    start_dt = datetime(year, parse_month_to_number(month), day, hour, minute, tzinfo=ZoneInfo("America/Chicago"))
-                            if start_dt is None:
-                                start_dt = datetime(year, parse_month_to_number(month), day, 12, 0, tzinfo=ZoneInfo("America/Chicago"))
-                            end_dt = start_dt + timedelta(hours=3)
-                            event_info["start"] = start_dt.isoformat()
-                            event_info["end"] = end_dt.isoformat()
+                    date_div = listing.find("div", class_="sidearm-schedule-game-opponent-date")
+                    event_info["start"] = ""
+                    event_info["end"] = ""
+                    if date_div:
+                        date_spans = date_div.find_all("span")
+                        if len(date_spans) >= 1 and date_spans[0].text:
+                            date_match = re.search(r"(\w+)\s+(\d+)", date_spans[0].text)
+                            if date_match:
+                                month = date_match.group(1)
+                                day = int(date_match.group(2))
+                                month_num = parse_month_to_number(month)
+                                
+                                current_month = datetime.now().month
+                                current_year = datetime.now().year
+                                # Simple school year wrap-around logic
+                                if current_month >= 8 and month_num < 8:
+                                    year = current_year + 1
+                                else:
+                                    year = current_year
+                                
+                                start_dt = None
+                                if len(date_spans) >= 2 and date_spans[1].text:
+                                    time_match = re.search(r"(\d{1,2}):?(\d{2})?\s*(am|pm)", date_spans[1].text, re.IGNORECASE)
+                                    if time_match:
+                                        hour = int(time_match.group(1))
+                                        minute = int(time_match.group(2)) if time_match.group(2) else 0
+                                        meridiem = time_match.group(3).lower()
+                                        if meridiem == "pm" and hour != 12:
+                                            hour += 12
+                                        elif meridiem == "am" and hour == 12:
+                                            hour = 0
+                                        start_dt = datetime(year, month_num, day, hour, minute, tzinfo=ZoneInfo("America/Chicago"))
+                                
+                                if start_dt is None:
+                                    start_dt = datetime(year, month_num, day, 12, 0, tzinfo=ZoneInfo("America/Chicago"))
+                                
+                                end_dt = start_dt + timedelta(hours=3)
+                                event_info["start"] = start_dt.isoformat()
+                                event_info["end"] = end_dt.isoformat()
 
-                loc_div = event_listings[i].find("div", class_="sidearm-schedule-game-location")
-                if loc_div:
-                    loc_spans = loc_div.find_all("span")
-                    if loc_spans:
-                        event_info["location"] = f"{loc_spans[1].text}, {loc_spans[0].text}" if len(loc_spans) > 1 else loc_spans[0].text
+                    loc_div = listing.find("div", class_="sidearm-schedule-game-location")
+                    if loc_div:
+                        loc_spans = loc_div.find_all("span")
+                        if loc_spans:
+                            event_info["location"] = f"{loc_spans[1].text.strip()}, {loc_spans[0].text.strip()}" if len(loc_spans) > 1 else loc_spans[0].text.strip()
+                        else:
+                            event_info["location"] = "Champaign, Ill."
                     else:
                         event_info["location"] = "Champaign, Ill."
-                else:
-                    event_info["location"] = "Champaign, Ill."
 
-                event_info = {k: (v.strip() if isinstance(v, str) else v) for k, v in event_info.items()}
-                event_info = detect_free_food(event_info)
-                events[event_count] = event_info
-                event_count += 1
-            except Exception:
-                continue
+                    event_info = {k: (v.strip() if isinstance(v, str) else v) for k, v in event_info.items()}
+                    event_info = detect_free_food(event_info)
+                    events[event_count] = event_info
+                    event_count += 1
+                except Exception as e:
+                    print(f"      ⚠️  Error parsing game {i+1}: {e}")
+                    continue
+
+        except Exception as e:
+            print(f"   ❌ Error scraping {calendar_link}: {e}")
     return events
 
 # Scrape All Function
