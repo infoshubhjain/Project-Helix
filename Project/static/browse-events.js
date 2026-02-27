@@ -104,7 +104,28 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       // Fetch from static JSON file instead of Firebase
       // The file is committed to the repo by the scraper
-      const response = await fetch('./scraped_events.json');
+      const candidateUrls = [
+        new URL('Project/scraped_events.json', window.location.href).toString(),
+        new URL('./Project/scraped_events.json', window.location.href).toString(),
+      ];
+
+      let response = null;
+      let lastError = null;
+      for (const url of candidateUrls) {
+        try {
+          response = await fetch(url, { cache: 'no-store' });
+          if (response && response.ok) {
+            break;
+          }
+        } catch (e) {
+          lastError = e;
+          response = null;
+        }
+      }
+
+      if (!response) {
+        throw lastError || new Error('Failed to fetch events JSON');
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);

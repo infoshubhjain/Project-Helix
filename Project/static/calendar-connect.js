@@ -32,8 +32,8 @@ function initializeGoogleCalendar() {
         typeof GOOGLE_API_KEY === 'undefined' || 
         GOOGLE_CLIENT_ID.includes('YOUR_CLIENT_ID') || 
         GOOGLE_API_KEY.includes('YOUR_API_KEY')) {
-        console.warn('⚠️ Google API credentials not configured');
-        showCredentialsWarning();
+        console.warn('⚠️ Google API credentials not configured; disabling Google Calendar features');
+        disableCalendarConnectUI();
         return;
     }
 
@@ -53,6 +53,28 @@ function initializeGoogleCalendar() {
         console.log('⏳ Waiting for Google Identity Services to load...');
         setTimeout(initializeGoogleCalendar, 1000);
         return;
+    }
+}
+
+function disableCalendarConnectUI() {
+    const connectBtn = document.getElementById('connect-calendar-btn');
+    if (connectBtn) {
+        connectBtn.textContent = 'Connect Google Calendar';
+        connectBtn.disabled = true;
+        connectBtn.style.opacity = '0.6';
+        connectBtn.style.cursor = 'not-allowed';
+        connectBtn.title = 'Google Calendar integration is not configured for this deployment.';
+    }
+
+    // If the global toast system exists, show a non-blocking hint.
+    // Avoid alerts/prompts on GitHub Pages where credentials are intentionally not included.
+    if (window.showToast) {
+        window.showToast(
+            'Google Calendar Disabled',
+            'Calendar integration is not configured on this site. You can still browse events and export them.',
+            'info',
+            6000
+        );
     }
 }
 
