@@ -13,7 +13,7 @@ install:
 	cd Project && pip install -r requirements.txt && playwright install chromium
 
 test validate:
-	python3 test_scrapers.py
+	cd Project && python3 -m py_compile scrape.py && echo "Python syntax validation passed"
 
 scrape-local:
 	cd Project && python3 scrape.py

@@ -10,6 +10,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Set up Parse Manual Events button
+  const parseManualEventsBtn = document.getElementById("parse-manual-events");
+  if (parseManualEventsBtn) {
+    parseManualEventsBtn.addEventListener("click", () => {
+      document.getElementById("parse-modal").style.display = "flex";
+    });
+  }
+
   // Close modal buttons
   const closeModalBtn = document.getElementById("close-modal");
   if (closeModalBtn) {

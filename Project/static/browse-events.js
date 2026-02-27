@@ -9,21 +9,36 @@ document.addEventListener("DOMContentLoaded", function () {
   const categorySelect = document.getElementById("filter-category");
   const detailModal = document.getElementById("detail-modal");
   const closeButton = document.getElementById("close-detail");
+  
+  // Advanced filter elements
+  const dateFilter = document.getElementById("date-filter");
+  const locationFilter = document.getElementById("location-filter");
+  const timeFilter = document.getElementById("time-filter");
+  const customDateGroup = document.getElementById("custom-date-group");
+  const startDateInput = document.getElementById("start-date");
+  const endDateInput = document.getElementById("end-date");
+  const clearFiltersBtn = document.getElementById("clear-filters");
+  const activeFiltersDisplay = document.getElementById("active-filters");
 
   // Store all events in a simple array
   let allEvents = [];
 
-  // Pagination variables
+  // Enhanced pagination variables
   let currentlyDisplayedEvents = []; // Events that match current filter
   let displayedCount = 0; // How many events are currently shown
-  const EVENTS_PER_PAGE = 30; // Show 30 events at a time
+  const EVENTS_PER_PAGE = 20; // Reduced for better performance
+  let isLoading = false; // Prevent duplicate loading
+  let hasMoreEvents = true; // Track if more events available
+  let totalEventsFound = 0; // Total events matching current filter
+
+  // Intersection Observer for infinite scroll
+  let intersectionObserver = null;
 
   // Fuse.js instance for fuzzy search
   let fuse = null;
 
-  // ========== Skeleton loading ==========
-  function showSkeleton(container) {
-    const count = 6;
+  // ========== Enhanced Skeleton loading ==========
+  function showSkeleton(container, count = 6) {
     let html = '';
     for (let i = 0; i < count; i++) {
       html += `
@@ -41,13 +56,55 @@ document.addEventListener("DOMContentLoaded", function () {
     container.innerHTML = html;
   }
 
+  function showLoadingSpinner() {
+    const spinner = document.createElement('div');
+    spinner.className = 'loading-spinner';
+    spinner.innerHTML = `
+      <div class="spinner"></div>
+      <p>Loading more events...</p>
+    `;
+    return spinner;
+  }
+
+  function setupIntersectionObserver() {
+    // Create intersection observer for infinite scroll
+    intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting && !isLoading && hasMoreEvents) {
+            loadMoreEvents();
+          }
+        });
+      },
+      {
+        root: null,
+        rootMargin: '100px', // Start loading 100px before reaching bottom
+        threshold: 0.1
+      }
+    );
+  }
+
+  function observeLoadMoreTrigger() {
+    const loadMoreBtn = document.getElementById('load-more-btn');
+    if (loadMoreBtn && intersectionObserver) {
+      intersectionObserver.observe(loadMoreBtn);
+    }
+  }
+
+  function unobserveLoadMoreTrigger() {
+    const loadMoreBtn = document.getElementById('load-more-btn');
+    if (loadMoreBtn && intersectionObserver) {
+      intersectionObserver.unobserve(loadMoreBtn);
+    }
+  }
+
   // ========== STEP 1: Load Events ==========
   async function loadEvents() {
     showSkeleton(browseContainer);
     try {
       // Fetch from static JSON file instead of Firebase
       // The file is committed to the repo by the scraper
-      const response = await fetch('Project/scraped_events.json');
+      const response = await fetch('./scraped_events.json');
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -245,21 +302,228 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  function setActiveChip(value) {
-    const chips = document.querySelectorAll('.filter-chip');
-    chips.forEach(c => {
-      c.classList.toggle('active', c.getAttribute('data-category') === value);
+  // ========== Advanced Filter Functions ==========
+  function setupAdvancedFilters() {
+    // Date filter change handler
+    if (dateFilter) {
+      dateFilter.addEventListener('change', () => {
+        const value = dateFilter.value;
+        if (value === 'custom') {
+          customDateGroup.style.display = 'flex';
+          // Set default dates to today and next week
+          const today = new Date();
+          const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+          startDateInput.value = today.toISOString().split('T')[0];
+          endDateInput.value = nextWeek.toISOString().split('T')[0];
+        } else {
+          customDateGroup.style.display = 'none';
+        }
+        searchEvents();
+      });
+    }
+    
+    // Location filter change handler
+    if (locationFilter) {
+      locationFilter.addEventListener('change', searchEvents);
+    }
+    
+    // Time filter change handler
+    if (timeFilter) {
+      timeFilter.addEventListener('change', searchEvents);
+    }
+    
+    // Custom date change handlers
+    if (startDateInput) {
+      startDateInput.addEventListener('change', searchEvents);
+    }
+    if (endDateInput) {
+      endDateInput.addEventListener('change', searchEvents);
+    }
+    
+    // Clear filters button
+    if (clearFiltersBtn) {
+      clearFiltersBtn.addEventListener('click', clearAllFilters);
+    }
+  }
+  
+  function clearAllFilters() {
+    searchInput.value = '';
+    categorySelect.value = 'all';
+    dateFilter.value = 'all';
+    locationFilter.value = 'all';
+    timeFilter.value = 'all';
+    customDateGroup.style.display = 'none';
+    startDateInput.value = '';
+    endDateInput.value = '';
+    
+    // Clear active filter chips
+    if (activeFiltersDisplay) {
+      activeFiltersDisplay.innerHTML = '';
+    }
+    
+    // Reset category chips
+    setActiveChip('all');
+    
+    // Search with cleared filters
+    searchEvents();
+  }
+  
+  function updateActiveFiltersDisplay() {
+    if (!activeFiltersDisplay) return;
+    
+    const activeFilters = [];
+    
+    // Check each filter
+    if (searchInput.value.trim()) {
+      activeFilters.push({ type: 'search', value: searchInput.value.trim() });
+    }
+    if (categorySelect.value !== 'all') {
+      activeFilters.push({ type: 'category', value: categorySelect.value });
+    }
+    if (dateFilter.value !== 'all') {
+      if (dateFilter.value === 'custom') {
+        const start = startDateInput.value;
+        const end = endDateInput.value;
+        activeFilters.push({ type: 'date', value: `${start} to ${end}` });
+      } else {
+        activeFilters.push({ type: 'date', value: dateFilter.options[dateFilter.selectedIndex].text });
+      }
+    }
+    if (locationFilter.value !== 'all') {
+      activeFilters.push({ type: 'location', value: locationFilter.options[locationFilter.selectedIndex].text });
+    }
+    if (timeFilter.value !== 'all') {
+      activeFilters.push({ type: 'time', value: timeFilter.options[timeFilter.selectedIndex].text });
+    }
+    
+    // Display active filters as chips
+    if (activeFilters.length === 0) {
+      activeFiltersDisplay.innerHTML = '';
+    } else {
+      const chips = activeFilters.map(filter => 
+        `<span class="active-filter-chip">${filter.value}</span>`
+      ).join('');
+      activeFiltersDisplay.innerHTML = `<div class="active-filters-label">Active filters:</div>${chips}`;
+    }
+  }
+  
+  function filterEventsByAdvancedCriteria(events) {
+    return events.filter(event => {
+      // Date filtering
+      if (!passesDateFilter(event)) return false;
+      
+      // Location filtering
+      if (!passesLocationFilter(event)) return false;
+      
+      // Time filtering
+      if (!passesTimeFilter(event)) return false;
+      
+      return true;
     });
   }
+  
+  function passesDateFilter(event) {
+    const dateValue = dateFilter.value;
+    if (dateValue === 'all') return true;
+    
+    const eventDate = getEventDateTime(event);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    switch (dateValue) {
+      case 'today':
+        return isSameDay(eventDate, today);
+      case 'tomorrow':
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return isSameDay(eventDate, tomorrow);
+      case 'week':
+        const weekEnd = new Date(today);
+        weekEnd.setDate(weekEnd.getDate() + 7);
+        return eventDate >= today && eventDate <= weekEnd;
+      case 'month':
+        const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        return eventDate >= today && eventDate <= monthEnd;
+      case 'custom':
+        const startDate = new Date(startDateInput.value);
+        const endDate = new Date(endDateInput.value);
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
+        return eventDate >= startDate && eventDate <= endDate;
+      default:
+        return true;
+    }
+  }
+  
+  function passesLocationFilter(event) {
+    const locationValue = locationFilter.value;
+    if (locationValue === 'all') return true;
+    
+    const location = (event.location || '').toLowerCase();
+    
+    switch (locationValue) {
+      case 'campus':
+        return location.includes('campus') || location.includes('university') || 
+               location.includes('hall') || location.includes('building') ||
+               location.includes('urbana') || location.includes('champaign');
+      case 'downtown':
+        return location.includes('downtown') || location.includes('champaign') || 
+               location.includes('urbana');
+      case 'online':
+        return location.includes('online') || location.includes('virtual') || 
+               location.includes('zoom') || location.includes('webex');
+      case 'union':
+        return location.includes('union') || location.includes('student union');
+      case 'library':
+        return location.includes('library') || location.includes('lib');
+      case 'recreation':
+        return location.includes('recreation') || location.includes('arc') || 
+               location.includes('gym') || location.includes('crce');
+      default:
+        return true;
+    }
+  }
+  
+  function passesTimeFilter(event) {
+    const timeValue = timeFilter.value;
+    if (timeValue === 'all') return true;
+    
+    const eventDate = getEventDateTime(event);
+    const hour = eventDate.getHours();
+    
+    switch (timeValue) {
+      case 'morning':
+        return hour >= 6 && hour < 12;
+      case 'afternoon':
+        return hour >= 12 && hour < 18;
+      case 'evening':
+        return hour >= 18 && hour < 24;
+      case 'night':
+        return hour >= 0 && hour < 6;
+      default:
+        return true;
+    }
+  }
+  
+  function isSameDay(date1, date2) {
+    return date1.getFullYear() === date2.getFullYear() &&
+           date1.getMonth() === date2.getMonth() &&
+           date1.getDate() === date2.getDate();
+  }
 
-  // ========== STEP 3: Display Events ==========
-  // Show events as cards on the page with pagination
+  // ========== STEP 3: Enhanced Display Events ==========
+  // Show events as cards on the page with improved pagination
   function displayEvents(events, append = false) {
     // Store the filtered events for pagination
     if (!append) {
       currentlyDisplayedEvents = events;
       displayedCount = 0;
-      browseContainer.innerHTML = ''; // Clear existing cards
+      hasMoreEvents = true;
+      totalEventsFound = events.length;
+      
+      if (!append) {
+        browseContainer.innerHTML = ''; // Clear existing cards
+      }
     }
 
     // If no events, show a message
@@ -270,42 +534,93 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Calculate how many events to show
     const endIndex = Math.min(displayedCount + EVENTS_PER_PAGE, events.length);
+    
+    // Show loading spinner for append operations
+    if (append && isLoading) {
+      const existingSpinner = browseContainer.querySelector('.loading-spinner');
+      if (!existingSpinner) {
+        browseContainer.appendChild(showLoadingSpinner());
+      }
+    }
 
     // Create cards for the next batch of events
+    const fragment = document.createDocumentFragment();
     for (let i = displayedCount; i < endIndex; i++) {
       let card = createEventCard(events[i]);
-      browseContainer.appendChild(card);
+      fragment.appendChild(card);
     }
+    
+    // Remove loading spinner if exists
+    const spinner = browseContainer.querySelector('.loading-spinner');
+    if (spinner) {
+      spinner.remove();
+    }
+    
+    browseContainer.appendChild(fragment);
 
     // Update displayed count
     displayedCount = endIndex;
 
+    // Check if there are more events
+    hasMoreEvents = displayedCount < events.length;
+
     // Add or update the "Load More" button
     updateLoadMoreButton();
+    
+    // Set up intersection observer for infinite scroll
+    if (hasMoreEvents && !intersectionObserver) {
+      setupIntersectionObserver();
+    }
+    
+    // Observe the load more trigger
+    if (hasMoreEvents) {
+      observeLoadMoreTrigger();
+    }
   }
 
-  // ========== Update Load More Button ==========
+  // ========== Enhanced Update Load More Button ==========
   function updateLoadMoreButton() {
-    // Remove existing button if present
+    // Remove existing button and observer
+    unobserveLoadMoreTrigger();
     const existingButton = document.getElementById('load-more-btn');
     if (existingButton) {
       existingButton.remove();
     }
 
     // Only show button if there are more events to load
-    if (displayedCount < currentlyDisplayedEvents.length) {
+    if (hasMoreEvents) {
       const loadMoreBtn = document.createElement('button');
       loadMoreBtn.id = 'load-more-btn';
       loadMoreBtn.className = 'load-more-btn';
       loadMoreBtn.textContent = `Load More (${currentlyDisplayedEvents.length - displayedCount} remaining)`;
       loadMoreBtn.onclick = loadMoreEvents;
       browseContainer.appendChild(loadMoreBtn);
+    } else if (totalEventsFound > EVENTS_PER_PAGE) {
+      // Show end of events message
+      const endMessage = document.createElement('div');
+      endMessage.className = 'end-of-events';
+      endMessage.textContent = `Showing all ${totalEventsFound} events`;
+      browseContainer.appendChild(endMessage);
     }
   }
 
-  // ========== Load More Events ==========
-  function loadMoreEvents() {
-    displayEvents(currentlyDisplayedEvents, true);
+  // ========== Enhanced Load More Events ==========
+  async function loadMoreEvents() {
+    if (isLoading || !hasMoreEvents) return;
+    
+    isLoading = true;
+    
+    try {
+      // Simulate network delay for better UX
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      displayEvents(currentlyDisplayedEvents, true);
+    } catch (error) {
+      console.error('Error loading more events:', error);
+      showToast('Error', 'Failed to load more events', 'error');
+    } finally {
+      isLoading = false;
+    }
   }
 
   // ========== STEP 4: Create a Single Event Card (glass style) ==========
@@ -436,8 +751,8 @@ document.addEventListener("DOMContentLoaded", function () {
     console.log('📅 Calendars refreshed');
   }
 
-  // ========== STEP 7: Search Function ==========
-  // Filter events based on search text (using Fuse.js for fuzzy matching)
+  // ========== Enhanced STEP 7: Search Function ==========
+  // Filter events based on search text and advanced criteria
   function searchEvents() {
     let searchText = searchInput.value.trim();
     let selectedCategory = categorySelect.value;
@@ -467,12 +782,18 @@ document.addEventListener("DOMContentLoaded", function () {
         filtered.push(event);
       }
     }
+    
+    // Apply advanced filters (date, location, time)
+    filtered = filterEventsByAdvancedCriteria(filtered);
+    
+    // Update active filters display
+    updateActiveFiltersDisplay();
 
     // Display the filtered events
     displayEvents(filtered);
   }
 
-  // ========== STEP 8: Event Listeners ==========
+  // ========== STEP 8: Enhanced Event Listeners ==========
   // When user types in search box
   searchInput.addEventListener('input', searchEvents);
 
@@ -493,6 +814,17 @@ document.addEventListener("DOMContentLoaded", function () {
       detailModal.style.display = 'none';
     }
   });
+  
+  // Set up advanced filters
+  setupAdvancedFilters();
+  
+  // Add setActiveChip function for category chips
+  function setActiveChip(value) {
+    const chips = document.querySelectorAll('.filter-chip');
+    chips.forEach(c => {
+      c.classList.toggle('active', c.getAttribute('data-category') === value);
+    });
+  }
 
   // ========== EXPORT FUNCTIONALITY ==========
   // Export to iCal button

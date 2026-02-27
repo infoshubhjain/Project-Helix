@@ -5,8 +5,13 @@ from zoneinfo import ZoneInfo
 import os
 import re
 import json
+import time
+import logging
+from typing import Dict, List, Optional, Any
 from playwright.sync_api import sync_playwright
 import requests
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 
 try:
     import modal
@@ -18,8 +23,31 @@ try:
 except ImportError:
     firebase_admin = None
 
+#-----------------------CONFIGURATION & LOGGING-----------------------#
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('scraping.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Scraping configuration
+CONFIG = {
+    'max_retries': 3,
+    'retry_delay': 2,  # seconds
+    'request_timeout': 30,
+    'max_pages_per_calendar': 10,
+    'user_agent': 'Mozilla/5.0 (compatible; ProjectHelix/1.0; +https://github.com/infoshubhjain/Project-Helix)',
+    'rate_limit_delay': 1  # seconds between requests
+}
+
 # Variables & Constants
 global event_count
+event_count = 0
 GENERAL_CALENDAR_LINKS = [
     "https://calendars.illinois.edu/list/7",
     "https://calendars.illinois.edu/list/557",
@@ -44,6 +72,79 @@ ATHLETIC_TICKET_LINKS = [
     "https://fightingillini.com/sports/womens-volleyball/schedule"
 ]
 #-----------------------HELPER FUNCTIONS-----------------------#
+def create_robust_session() -> requests.Session:
+    """Create a requests session with retry logic and proper headers."""
+    session = requests.Session()
+    
+    # Configure retry strategy
+    retry_strategy = Retry(
+        total=CONFIG['max_retries'],
+        status_forcelist=[429, 500, 502, 503, 504],
+        method_whitelist=["HEAD", "GET", "OPTIONS"],
+        backoff_factor=CONFIG['retry_delay'],
+        raise_on_status=False
+    )
+    
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    # Set headers
+    session.headers.update({
+        "User-Agent": CONFIG['user_agent'],
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1"
+    })
+    
+    return session
+
+def safe_request(url: str, session: requests.Session, method: str = "GET", **kwargs) -> Optional[requests.Response]:
+    """Make a safe HTTP request with error handling and logging."""
+    try:
+        # Add rate limiting
+        time.sleep(CONFIG['rate_limit_delay'])
+        
+        response = session.request(
+            method, 
+            url, 
+            timeout=CONFIG['request_timeout'],
+            **kwargs
+        )
+        
+        if response.status_code == 200:
+            logger.debug(f"Successfully fetched: {url}")
+            return response
+        else:
+            logger.warning(f"HTTP {response.status_code} for {url}")
+            return None
+            
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout for {url}")
+        return None
+    except requests.exceptions.ConnectionError:
+        logger.error(f"Connection error for {url}")
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request exception for {url}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error for {url}: {e}")
+        return None
+
+def validate_event(event: Dict[str, Any]) -> bool:
+    """Validate that an event has required fields."""
+    required_fields = ['summary']
+    
+    for field in required_fields:
+        if field not in event or not event[field]:
+            logger.warning(f"Event missing required field '{field}': {event}")
+            return False
+    
+    return True
 def parse_month_to_number(month_str):
     try:
         return datetime.strptime(month_str, "%B").month
@@ -100,31 +201,37 @@ def detect_free_food(event_info):
     return event_info
 #-----------------------SCRAPERS-----------------------#
 # Individual Scrapers
-def scrape_general():
+def scrape_general() -> Dict[str, Any]:
+    """Scrape general university calendars with enhanced error handling."""
     global event_count
-    session = requests.Session()
-    session.headers.update({"User-Agent": "Mozilla/5.0 (compatible; ProjectHelix/1.0)"})
+    session = create_robust_session()
     events = {}
+    successful_calendars = 0
+    failed_calendars = 0
     
-    # We will verify up to this many pages per calendar to avoid infinite loops
-    MAX_PAGES = 10 
+    logger.info(f"Starting to scrape {len(GENERAL_CALENDAR_LINKS)} general calendars")
     
-    for base_calendar_link in GENERAL_CALENDAR_LINKS:
+    for i, base_calendar_link in enumerate(GENERAL_CALENDAR_LINKS):
+        logger.info(f"Processing calendar {i+1}/{len(GENERAL_CALENDAR_LINKS)}: {base_calendar_link}")
+        
         # Ensure we use list view and show recurring events
         current_url = f"{base_calendar_link}?listType=list&isRecurring=true"
         page_num = 0
+        calendar_events = 0
         
-        while current_url and page_num < MAX_PAGES:
-            try:
-                print(f"Scraping {current_url}...")
-                response = session.get(current_url, timeout=20)
-                if response.status_code != 200:
-                    print(f"Failed to fetch {current_url}: Status {response.status_code}")
+        try:
+            while current_url and page_num < CONFIG['max_pages_per_calendar']:
+                logger.debug(f"Scraping page {page_num + 1}: {current_url}")
+                
+                response = safe_request(current_url, session)
+                if not response:
+                    logger.warning(f"Failed to fetch page {page_num + 1} for {base_calendar_link}")
                     break
                     
                 soup = BeautifulSoup(response.text, "lxml")
                 container = soup.find(id="ws-calendar-container")
                 if not container:
+                    logger.warning(f"No calendar container found for {base_calendar_link}")
                     break
 
                 # The structure in list view:
@@ -222,7 +329,6 @@ def scrape_general():
                                         # Single time
                                         single_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", time_str)
                                         if single_match:
-                                            # ... (existing code)
                                             sh, sm, s_mer = single_match.groups()
                                             sh, sm = int(sh), int(sm)
                                             if s_mer == "pm" and sh != 12: sh += 12
@@ -243,14 +349,15 @@ def scrape_general():
                                 else:
                                     event_info["end"] = ""
 
-                                # Add to events list
-                                event_info = detect_free_food(event_info)
-                                events[event_count] = event_info
-                                event_count += 1
+                                # Validate and add event
+                                if validate_event(event_info):
+                                    event_info = detect_free_food(event_info)
+                                    events[event_count] = event_info
+                                    event_count += 1
+                                    calendar_events += 1
                                 
                             except Exception as e:
-                                # create print statement for error
-                                # print(f"Error parsing event entry: {e}")
+                                logger.error(f"Error parsing event entry: {e}")
                                 continue
 
                 # Pagination
@@ -260,15 +367,24 @@ def scrape_general():
                     if next_href.startswith("/"):
                         current_url = "https://calendars.illinois.edu" + next_href
                     else:
-                         current_url = next_href # Should probably handle relative paths better if needed
+                        current_url = next_href  # Should probably handle relative paths better if needed
                     page_num += 1
                 else:
                     current_url = None # No more pages
 
-            except Exception as e:
-                print(f"Error scraping {current_url}: {e}")
-                break
+            if calendar_events > 0:
+                successful_calendars += 1
+                logger.info(f"Successfully scraped {calendar_events} events from {base_calendar_link}")
+            else:
+                failed_calendars += 1
+                logger.warning(f"No events found in {base_calendar_link}")
+                
+        except Exception as e:
+            failed_calendars += 1
+            logger.error(f"Error scraping {base_calendar_link}: {e}")
+            continue
 
+    logger.info(f"General scraping complete: {successful_calendars} successful, {failed_calendars} failed calendars")
     return events
 
 def scrape_state_farm():
@@ -289,7 +405,7 @@ def scrape_state_farm():
         soup = BeautifulSoup(response.text, "lxml")
         event_listings = soup.find_all("a", class_="more buttons-hide")
         if not event_listings:
-             event_listings = soup.select('a[href*="/events/detail/"]')
+            event_listings = soup.select('a[href*="/events/detail/"]')
         
         print(f"   Found {len(event_listings)} event listings")
 

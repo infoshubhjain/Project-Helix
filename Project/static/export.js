@@ -212,3 +212,7 @@ function showToast(title, message, type, duration) {
     console.log(`Toast: ${title} - ${message}`);
   }
 }
+
+// Also make functions available globally for other scripts
+window.exportToICal = exportToICal;
+window.exportToCSV = exportToCSV;

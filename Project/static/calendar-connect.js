@@ -451,6 +451,11 @@ function escapeHtml(text) {
 
 // Notification helper
 function showNotification(message, type = 'info') {
+    if (window.showToast) {
+        window.showToast(type === 'success' ? 'Success' : type === 'warning' ? 'Warning' : type === 'error' ? 'Error' : 'Info', message, type);
+        return;
+    }
+
     console.log(`[${type.toUpperCase()}] ${message}`);
 
     // Create toast notification
