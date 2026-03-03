@@ -5,7 +5,7 @@
  * Export filtered events to iCal format
  * @param {Array} events - Array of event objects to export
  */
-export function exportToICal(events) {
+function exportToICal(events) {
   if (!events || events.length === 0) {
     showToast('No Events', 'No events available to export', 'warning');
     return;
@@ -120,7 +120,7 @@ function generateUID() {
  * Export filtered events to CSV format
  * @param {Array} events - Array of event objects to export
  */
-export function exportToCSV(events) {
+function exportToCSV(events) {
   if (!events || events.length === 0) {
     showToast('No Events', 'No events available to export', 'warning');
     return;

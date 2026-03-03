@@ -180,6 +180,15 @@ document.addEventListener("DOMContentLoaded", function () {
   // ========== Parse Event Data ==========
   // Convert scraper format to display format
   function parseEventData(event) {
+    // Normalize common schema variants from different scraper sources
+    event.summary = (event.summary || event.title || event.name || 'Untitled Event').toString().trim();
+    event.location = (event.location || event.venue || 'Location TBA').toString().trim();
+    event.tag = (event.tag || event.category || 'General').toString().trim();
+    event.htmlLink = (event.htmlLink || event.link || event.url || '').toString().trim();
+    event.description = normalizeDescription(
+      event.description || event.desc || event.event_description || event.details || ''
+    );
+
     // Parse ISO datetime strings (e.g., "2025-11-30T14:00:00-06:00")
     if (event.start && event.start.includes('T')) {
       const startDate = new Date(event.start);
@@ -194,6 +203,19 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     return event;
+  }
+
+  function normalizeDescription(rawValue) {
+    if (!rawValue) return '';
+    const div = document.createElement('div');
+    div.innerHTML = String(rawValue);
+    return div.textContent.replace(/\s+/g, ' ').trim();
+  }
+
+  function buildDescriptionPreview(event) {
+    if (!event.description) return 'No description provided by source.';
+    if (event.description.length <= 140) return event.description;
+    return `${event.description.slice(0, 137)}...`;
   }
 
   // ========== Format Date Helper ==========
@@ -660,6 +682,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const timeStr = time || 'Time TBA';
     const locationStr = event.location || 'Location TBA';
     const title = (event.summary || 'Untitled Event').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const descriptionPreview = buildDescriptionPreview(event)
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
 
     let html = '<div class="event-card-meta">';
     html += '<span>📅 ' + dateStr + '</span>';
@@ -667,6 +692,7 @@ document.addEventListener("DOMContentLoaded", function () {
     html += '</div>';
     html += '<div class="event-card-title">' + title + '</div>';
     html += '<div class="event-card-info"><strong>📍</strong><span>' + locationStr + '</span></div>';
+    html += '<p class="event-card-description">' + descriptionPreview + '</p>';
     html += '<div class="event-card-footer">';
     html += '<span class="event-tag ' + tagClass + '">' + tag.replace(/</g, '&lt;') + '</span>';
     html += '<div class="card-actions">';
@@ -691,15 +717,20 @@ document.addEventListener("DOMContentLoaded", function () {
     // Set time value to 'All Day' if the event lasts the whole day; else make it time listed in the event data
     if (event.start_time == "12:00 AM" && event.end_time == "11:59 PM") {
       document.getElementById('detail-time').textContent = "All Day";
+    } else if (event.start_time && event.end_time) {
+      document.getElementById('detail-time').textContent = `${event.start_time} - ${event.end_time}`;
+    } else if (event.start_time) {
+      document.getElementById('detail-time').textContent = event.start_time;
     } else {
-      document.getElementById('detail-time').textContent = (event.start_time || '') + ' - ' + (event.end_time || '');
+      document.getElementById('detail-time').textContent = 'TBA';
     }
 
     document.getElementById('detail-location').textContent = event.location || 'TBA';
     const detailTag = document.getElementById('detail-tag');
     detailTag.textContent = event.tag || 'General';
     detailTag.className = 'event-tag ' + getTagClass(event.tag);
-    document.getElementById('detail-description').textContent = event.description || 'No description available.';
+    document.getElementById('detail-description').textContent =
+      normalizeDescription(event.description) || 'No description provided by source.';
 
     // Set the event link if it exists
     let linkElement = document.getElementById('detail-link');
