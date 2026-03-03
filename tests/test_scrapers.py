@@ -9,6 +9,7 @@ from playwright.sync_api import sync_playwright
 import re
 import requests
 import json
+from urllib.parse import urljoin
 
 # Variables & Constants
 event_count = 0
@@ -197,7 +198,7 @@ def scrape_state_farm():
 
             for i in range(0, len(event_listings)):
                 try:
-                    event_link = event_listings[i].attrs["href"]
+                    event_link = urljoin("https://www.statefarmcenter.com/", event_listings[i].attrs["href"])
                     event_info = {}
 
                     page.goto(event_link, wait_until="domcontentloaded", timeout=10000)

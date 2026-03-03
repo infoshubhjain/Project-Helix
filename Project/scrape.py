@@ -12,6 +12,7 @@ from playwright.sync_api import sync_playwright
 import requests
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
+from urllib.parse import urljoin
 
 try:
     import modal
@@ -41,6 +42,7 @@ CONFIG = {
     'retry_delay': 2,  # seconds
     'request_timeout': 30,
     'max_pages_per_calendar': 10,
+    'max_events_per_source': 2000,
     'user_agent': 'Mozilla/5.0 (compatible; ProjectHelix/1.0; +https://github.com/infoshubhjain/Project-Helix)',
     'rate_limit_delay': 1  # seconds between requests
 }
@@ -48,6 +50,7 @@ CONFIG = {
 # Variables & Constants
 global event_count
 event_count = 0
+last_scrape_stats: Dict[str, Dict[str, Any]] = {}
 GENERAL_CALENDAR_LINKS = [
     "https://calendars.illinois.edu/list/7",
     "https://calendars.illinois.edu/list/557",
@@ -77,13 +80,17 @@ def create_robust_session() -> requests.Session:
     session = requests.Session()
     
     # Configure retry strategy
-    retry_strategy = Retry(
-        total=CONFIG['max_retries'],
-        status_forcelist=[429, 500, 502, 503, 504],
-        method_whitelist=["HEAD", "GET", "OPTIONS"],
-        backoff_factor=CONFIG['retry_delay'],
-        raise_on_status=False
-    )
+    retry_kwargs = {
+        "total": CONFIG['max_retries'],
+        "status_forcelist": [429, 500, 502, 503, 504],
+        "backoff_factor": CONFIG['retry_delay'],
+        "raise_on_status": False,
+    }
+    try:
+        # urllib3>=2 renamed method_whitelist to allowed_methods.
+        retry_strategy = Retry(allowed_methods=["HEAD", "GET", "OPTIONS"], **retry_kwargs)
+    except TypeError:
+        retry_strategy = Retry(method_whitelist=["HEAD", "GET", "OPTIONS"], **retry_kwargs)
     
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("http://", adapter)
@@ -199,6 +206,21 @@ def detect_free_food(event_info):
                 return event_info
                 
     return event_info
+
+def cap_events(events: Dict[Any, Dict[str, Any]], max_events: int) -> Dict[Any, Dict[str, Any]]:
+    """Cap source events to avoid runaway growth from parser/site changes."""
+    if not isinstance(events, dict):
+        return {}
+    if len(events) <= max_events:
+        return events
+
+    capped_items = list(events.items())[:max_events]
+    logger.warning(
+        "Capping source events from %s to %s to prevent oversized output.",
+        len(events),
+        max_events,
+    )
+    return dict(capped_items)
 #-----------------------SCRAPERS-----------------------#
 # Individual Scrapers
 def scrape_general() -> Dict[str, Any]:
@@ -420,7 +442,7 @@ def scrape_state_farm():
                     if not event_link or event_link in seen_urls:
                         continue
                     if not event_link.startswith("http"):
-                        event_link = "https://www.statefarmcenter.com" + event_link.lstrip("/")
+                        event_link = urljoin("https://www.statefarmcenter.com/", event_link)
                     seen_urls.add(event_link)
 
                     print(f"   [{i+1}/{len(event_listings)}] Detail: {event_link}")
@@ -601,18 +623,35 @@ def scrape_athletics():
 
 # Scrape All Function
 def scrape():
-    global event_count
+    global event_count, last_scrape_stats
     event_count = 0
     combined_json_data = {}
+    last_scrape_stats = {}
+    max_events_per_source = CONFIG.get("max_events_per_source", 2000)
 
-    json_data_state_farm = scrape_state_farm()
-    combined_json_data = combined_json_data | json_data_state_farm
+    for scraper_name, scraper_fn in [
+        ("state_farm", scrape_state_farm),
+        ("athletics", scrape_athletics),
+        ("general", scrape_general),
+    ]:
+        source_events = {}
+        try:
+            scraped = scraper_fn()
+            if isinstance(scraped, dict):
+                source_events = cap_events(scraped, max_events_per_source)
+                for event in source_events.values():
+                    combined_json_data[len(combined_json_data)] = event
+            else:
+                logger.warning(f"{scraper_name} scraper returned non-dict payload; skipping merge.")
+        except Exception as e:
+            logger.exception(f"{scraper_name} scraper failed: {e}")
+        finally:
+            source_count = len(source_events) if isinstance(source_events, dict) else 0
+            status = "success" if source_count > 0 else "empty_or_failed"
+            last_scrape_stats[scraper_name] = {"events": source_count, "status": status}
 
-    json_data_athletics = scrape_athletics()
-    combined_json_data = combined_json_data | json_data_athletics
-
-    json_data_general = scrape_general()
-    combined_json_data = combined_json_data | json_data_general
+    logger.info("Scrape summary by source: %s", last_scrape_stats)
+    logger.info("Total merged events: %s", len(combined_json_data))
 
     return combined_json_data
 #-----------------------AUTO SCRAPE (Modal)-----------------------#
@@ -638,6 +677,9 @@ if modal is not None and firebase_admin is not None:
             })
         ref = db.reference("scraped_events")
         scraped_data = scrape()
+        source_event_total = sum(stat.get("events", 0) for stat in last_scrape_stats.values())
+        if source_event_total == 0:
+            raise RuntimeError("All sources returned zero events. Aborting write to Firebase.")
         ref.set(scraped_data)
         print(f"Scraper completed! Saved {len(scraped_data)} events to Firebase.")
 
@@ -648,6 +690,9 @@ if modal is not None and firebase_admin is not None:
 def main():
     print("Scraping events...")
     data = scrape()
+    source_event_total = sum(stat.get("events", 0) for stat in last_scrape_stats.values())
+    if source_event_total == 0:
+        raise RuntimeError("All sources returned zero events. Failing run to surface scraper outage.")
     
     # Save to JSON file (minified for faster loading)
     output_file = os.path.join(os.path.dirname(__file__), "scraped_events.json")

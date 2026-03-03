@@ -1,9 +1,14 @@
-name: Hourly Scraper
+name: Daily Scraper
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Runs every hour
+    - cron: '0 14 * * *'  # 9:00 AM America/Chicago during daylight time
+    - cron: '0 15 * * *'  # 9:00 AM America/Chicago during standard time
   workflow_dispatch:      # Allows manual trigger
+
+concurrency:
+  group: scraper-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   scrape-and-update:
@@ -21,8 +26,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install beautifulsoup4 lxml playwright requests firebase-admin
+          pip install -r Project/requirements.txt
           playwright install --with-deps chromium
+
+      - name: Run only at 9AM America/Chicago
+        run: |
+          if [ "$(TZ=America/Chicago date +%H)" != "09" ]; then
+            echo "Skipping duplicate DST/standard cron run."
+            exit 0
+          fi
+
+      - name: Run smoke tests
+        run: python -m unittest discover -s tests -p 'test_scrape_smoke.py' -v
 
       - name: Run Scraper
         run: python Project/scrape.py

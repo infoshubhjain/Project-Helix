@@ -39,13 +39,16 @@ class BaseScraper:
         session = requests.Session()
         
         # Configure retry strategy
-        retry_strategy = Retry(
-            total=SCRAPER_CONFIG['max_retries'],
-            status_forcelist=[429, 500, 502, 503, 504],
-            method_whitelist=["HEAD", "GET", "OPTIONS"],
-            backoff_factor=SCRAPER_CONFIG['retry_delay'],
-            raise_on_status=False
-        )
+        retry_kwargs = {
+            "total": SCRAPER_CONFIG['max_retries'],
+            "status_forcelist": [429, 500, 502, 503, 504],
+            "backoff_factor": SCRAPER_CONFIG['retry_delay'],
+            "raise_on_status": False,
+        }
+        try:
+            retry_strategy = Retry(allowed_methods=["HEAD", "GET", "OPTIONS"], **retry_kwargs)
+        except TypeError:
+            retry_strategy = Retry(method_whitelist=["HEAD", "GET", "OPTIONS"], **retry_kwargs)
         
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("http://", adapter)
