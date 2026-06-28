@@ -66,8 +66,10 @@ GENERAL_CALENDAR_LINKS = [
     "https://calendars.illinois.edu/list/79",   # Materials Research Laboratory
     "https://calendars.illinois.edu/list/25",   # Center for Advanced Study
 ]
-KCPA_CALENDAR_LINK = "https://krannertcenter.com/calendar"
-KAM_EVENTS_LINK    = "https://kam.illinois.edu/exhibitions-events/events"
+KCPA_CALENDAR_LINK    = "https://krannertcenter.com/calendar"
+KAM_EVENTS_LINK       = "https://kam.illinois.edu/exhibitions-events/events"
+MUSIC_EVENTS_LINK     = "https://music.illinois.edu/events"
+SPURLOCK_EVENTS_LINK  = "https://spurlock.illinois.edu/events"
 STATE_FARM_CENTER_CALENDAR_LINK = "https://www.statefarmcenter.com/events/all"
 ATHLETIC_TICKET_LINKS = [
     "https://fightingillini.com/sports/football/schedule",
@@ -364,7 +366,7 @@ def scrape_general() -> Dict[str, Any]:
                                             end_dt   = start_dt + timedelta(hours=1)
                                         else:
                                             start_dt = datetime(y, mo, d, 0, 0, tzinfo=TZ)
-                                            end_dt   = None
+                                            end_dt   = datetime(y, mo, d, 23, 59, tzinfo=TZ)
 
                                 event_info["start"] = start_dt.isoformat()
                                 event_info["end"]   = end_dt.isoformat() if end_dt else ""
@@ -651,14 +653,16 @@ def scrape_kcpa() -> Dict[str, Any]:
         rows = soup.find_all(class_="views-row")
         print(f"   Found {len(rows)} event rows")
 
+        seen_hrefs: set = set()
         for row in rows:
             try:
                 link_el = row.find("a")
                 if not link_el:
                     continue
                 href = link_el.get("href", "")
-                if not href:
+                if not href or href in seen_hrefs:
                     continue
+                seen_hrefs.add(href)
                 event_url = href if href.startswith("http") else "https://krannertcenter.com" + href
 
                 # Parse date from list row — "JUL 16, 2026" or "Th Jul 16, 2026 - 5:30pm CT"
@@ -682,10 +686,8 @@ def scrape_kcpa() -> Dict[str, Any]:
                 venue = venue_el.get_text(strip=True) if venue_el else "Krannert Center for the Performing Arts"
                 location = f"{venue}, Krannert Center, 500 S Goodwin Ave, Urbana, IL 61801"
 
-                # Price / tag
-                price_el = detail.find(class_=lambda c: c and "ticket-prices" in " ".join(c if isinstance(c, list) else [c]))
-                price_text = (price_el.get_text(strip=True) if price_el else "").lower()
-                tag = "Free Food 🍕" if "free" in price_text else "Performances"
+                # Price / tag — default to Performances; detect_free_food handles food keywords separately
+                tag = "Performances"
 
                 # Date + time from detail event-date: "Th Jul 16, 2026 - 5:30pm CT"
                 event_date_el = detail.find(class_=lambda c: c and "event-date" in (c if isinstance(c, str) else " ".join(c)))
@@ -773,7 +775,15 @@ def scrape_kam() -> Dict[str, Any]:
                     continue
                 href = link_el.get("href", "")
                 event_url = href if href.startswith("http") else "https://kam.illinois.edu" + href
-                summary = link_el.get_text(strip=True)
+
+                # Title is in views-field-title span; fall back to link text stripped of date prefix
+                title_el = row.find(class_=lambda c: c and "views-field-title" in " ".join(c if isinstance(c, list) else [c]))
+                if title_el:
+                    summary = title_el.get_text(strip=True)
+                else:
+                    # Strip leading date pattern "Mon DD, HH am–..." from link text
+                    raw = link_el.get_text(strip=True)
+                    summary = re.sub(r"^\w+\s+\d+,\s*[\d:]+\s*(?:am|pm)[–\-].*?(?:pm|am)\s*", "", raw, flags=re.IGNORECASE).strip() or raw
 
                 # Row text: "Jun 23, 10 am–Jul 2, 5 pm Title"
                 row_text = row.get_text(" ", strip=True)
@@ -831,6 +841,231 @@ def scrape_kam() -> Dict[str, Any]:
     return events
 
 
+def scrape_music() -> Dict[str, Any]:
+    """Scrape School of Music events.
+
+    List page: https://music.illinois.edu/events
+    Structure: <div class="event-card-content ..."> contains month/day spans,
+    a date string, a time string, and a title link.
+    """
+    events: Dict[int, Any] = {}
+    local_count = 0
+    session = create_robust_session()
+    TZ = ZoneInfo("America/Chicago")
+
+    print("\n🔍 Scraping School of Music events...")
+    try:
+        response = safe_request(MUSIC_EVENTS_LINK, session)
+        if not response:
+            print("   ❌ Failed to fetch Music events page")
+            return events
+
+        soup = BeautifulSoup(response.text, "lxml")
+        all_cards = soup.find_all(class_=lambda c: c and "event-card" in " ".join(c if isinstance(c, list) else [c]))
+        # Only top-level cards (no ancestor event-card) to avoid duplicates
+        cards = [c for c in all_cards if not c.find_parent(
+            class_=lambda c2: c2 and "event-card" in " ".join(c2 if isinstance(c2, list) else [c2])
+        )]
+        print(f"   Found {len(cards)} event cards")
+
+        seen_hrefs: set = set()
+        for card in cards:
+            try:
+                link_el = card.find("a", class_=lambda c: c and "linked-title" in " ".join(c if isinstance(c, list) else [c]))
+                if not link_el:
+                    continue
+                href = link_el.get("href", "")
+                if not href or href in seen_hrefs:
+                    continue
+                seen_hrefs.add(href)
+                event_url = href if href.startswith("http") else "https://music.illinois.edu" + href
+
+                # Title — strip the SVG icon text
+                summary = link_el.find("span", class_="linked-title__link-icon")
+                if summary:
+                    summary.decompose()
+                summary = link_el.get_text(strip=True)
+
+                # Date: <div class="event-card-content__date ...">July 5, 2026</div>
+                date_el = card.find(class_=lambda c: c and "event-card-content__date" in " ".join(c if isinstance(c, list) else [c]))
+                date_text = date_el.get_text(strip=True) if date_el else ""
+
+                # Time: <div class="event-card-content__time ...">Sunday, 5:30 PM - 7:00 PM</div>
+                time_el = card.find(class_=lambda c: c and "event-card-content__time" in " ".join(c if isinstance(c, list) else [c]))
+                time_text = time_el.get_text(" ", strip=True) if time_el else ""
+
+                if not date_text:
+                    continue
+
+                # Parse date "July 5, 2026"
+                try:
+                    date_obj = datetime.strptime(date_text, "%B %d, %Y")
+                except ValueError:
+                    try:
+                        date_obj = datetime.strptime(date_text, "%B %d %Y")
+                    except ValueError:
+                        logger.warning("Music: could not parse date %r", date_text)
+                        continue
+
+                y, mo, d = date_obj.year, date_obj.month, date_obj.day
+
+                # Parse time range "Sunday, 5:30 PM - 7:00 PM" → strip day-of-week first
+                time_text = re.sub(r"^\w+,\s*", "", time_text)
+                range_m = re.search(r"(\d{1,2}):(\d{2})\s*(AM|PM)\s*[-–]\s*(\d{1,2}):(\d{2})\s*(AM|PM)", time_text, re.IGNORECASE)
+                single_m = re.search(r"(\d{1,2}):(\d{2})\s*(AM|PM)", time_text, re.IGNORECASE)
+
+                if range_m:
+                    sh, sm, s_mer, eh, em, e_mer = range_m.groups()
+                    sh, sm, eh, em = int(sh), int(sm), int(eh), int(em)
+                    if s_mer.upper() == "PM" and sh != 12: sh += 12
+                    elif s_mer.upper() == "AM" and sh == 12: sh = 0
+                    if e_mer.upper() == "PM" and eh != 12: eh += 12
+                    elif e_mer.upper() == "AM" and eh == 12: eh = 0
+                    start_dt = datetime(y, mo, d, sh, sm, tzinfo=TZ)
+                    end_dt   = datetime(y, mo, d, eh, em, tzinfo=TZ)
+                elif single_m:
+                    sh, sm, s_mer = single_m.groups()
+                    sh, sm = int(sh), int(sm)
+                    if s_mer.upper() == "PM" and sh != 12: sh += 12
+                    elif s_mer.upper() == "AM" and sh == 12: sh = 0
+                    start_dt = datetime(y, mo, d, sh, sm, tzinfo=TZ)
+                    end_dt   = start_dt + timedelta(hours=2)
+                else:
+                    start_dt = datetime(y, mo, d, 19, 0, tzinfo=TZ)
+                    end_dt   = start_dt + timedelta(hours=2)
+
+                is_free = bool(card.find(class_=lambda c: c and "is-free" in " ".join(c if isinstance(c, list) else [c])))
+                tag = "Free Performances" if is_free else "Performances"
+
+                event_info = {
+                    "summary": summary,
+                    "description": f"School of Music event. See {event_url} for details.",
+                    "location": "University of Illinois School of Music, 1114 W Nevada St, Urbana, IL 61801",
+                    "tag": tag,
+                    "htmlLink": event_url,
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                }
+                event_info = detect_free_food(event_info)
+                if validate_event(event_info):
+                    events[local_count] = event_info
+                    local_count += 1
+
+            except Exception as e:
+                logger.error("Music: error parsing card: %s", e)
+                continue
+
+    except Exception as e:
+        print(f"   ❌ Error in scrape_music: {e}")
+
+    print(f"   ✅ Music: {local_count} events scraped")
+    return events
+
+
+def scrape_spurlock() -> Dict[str, Any]:
+    """Scrape Spurlock Museum of World Cultures events.
+
+    List page: https://spurlock.illinois.edu/events
+    Structure: <div class="card"> with nested .month/.day/.year spans and
+    an .title anchor; time in plain text "Event Time: HH:MM pm–HH:MM pm".
+    """
+    events: Dict[int, Any] = {}
+    local_count = 0
+    session = create_robust_session()
+    TZ = ZoneInfo("America/Chicago")
+
+    print("\n🔍 Scraping Spurlock Museum events...")
+    try:
+        response = safe_request(SPURLOCK_EVENTS_LINK, session)
+        if not response:
+            print("   ❌ Failed to fetch Spurlock events page")
+            return events
+
+        soup = BeautifulSoup(response.text, "lxml")
+        # Top-level .card divs that contain a date-plaque (not nested inside another .card)
+        all_cards = soup.find_all("div", class_="card")
+        cards = [c for c in all_cards if c.find(class_="month") and not c.find_parent("div", class_="card")]
+        print(f"   Found {len(cards)} event cards")
+
+        seen_hrefs: set = set()
+        for card in cards:
+            try:
+                # Date from .month / .day / .year spans
+                month_el = card.find(class_="month")
+                day_el   = card.find(class_="day")
+                year_el  = card.find(class_="year")
+                if not (month_el and day_el and year_el):
+                    continue
+
+                month_str = month_el.get_text(strip=True)   # "JUN"
+                day_str   = day_el.get_text(strip=True)     # "28"
+                year_str  = year_el.get_text(strip=True)    # "2026"
+                month_num = parse_month_to_number(month_str)
+                day, year = int(day_str), int(year_str)
+
+                # Title link
+                title_el = card.find(class_="title")
+                link_el  = title_el.find("a") if title_el else card.find("a")
+                if not link_el:
+                    continue
+                href = link_el.get("href", "")
+                if href in seen_hrefs:
+                    continue
+                seen_hrefs.add(href)
+                event_url = href if href.startswith("http") else "https://spurlock.illinois.edu/" + href.lstrip("/")
+                summary   = link_el.get_text(strip=True)
+
+                # Time from card text: "Event Time: 12:00 pm (CDT)–3:00 pm (CDT)"
+                card_text = card.get_text(" ", strip=True)
+                time_match = re.search(
+                    r"Event Time:\s*(\d{1,2}:\d{2}\s*(?:am|pm))[^–\-]*[–\-]\s*(\d{1,2}:\d{2}\s*(?:am|pm))",
+                    card_text, re.IGNORECASE,
+                )
+
+                def _parse_hm(t: str):
+                    t = t.strip().lower().replace(" ", "")
+                    m = re.match(r"(\d{1,2}):(\d{2})(am|pm)", t)
+                    if not m:
+                        return 12, 0
+                    h, mn, mer = int(m.group(1)), int(m.group(2)), m.group(3)
+                    if mer == "pm" and h != 12: h += 12
+                    elif mer == "am" and h == 12: h = 0
+                    return h, mn
+
+                if time_match:
+                    sh, sm = _parse_hm(time_match.group(1))
+                    eh, em = _parse_hm(time_match.group(2))
+                    start_dt = datetime(year, month_num, day, sh, sm, tzinfo=TZ)
+                    end_dt   = datetime(year, month_num, day, eh, em, tzinfo=TZ)
+                else:
+                    start_dt = datetime(year, month_num, day, 10, 0, tzinfo=TZ)
+                    end_dt   = datetime(year, month_num, day, 17, 0, tzinfo=TZ)
+
+                event_info = {
+                    "summary": summary,
+                    "description": f"Event at Spurlock Museum. See {event_url} for details.",
+                    "location": "Spurlock Museum, 600 S Gregory St, Urbana, IL 61801",
+                    "tag": "Arts",
+                    "htmlLink": event_url,
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                }
+                event_info = detect_free_food(event_info)
+                if validate_event(event_info):
+                    events[local_count] = event_info
+                    local_count += 1
+
+            except Exception as e:
+                logger.error("Spurlock: error parsing card: %s", e)
+                continue
+
+    except Exception as e:
+        print(f"   ❌ Error in scrape_spurlock: {e}")
+
+    print(f"   ✅ Spurlock: {local_count} events scraped")
+    return events
+
+
 # Scrape All Function
 def scrape():
     global last_scrape_stats
@@ -840,10 +1075,12 @@ def scrape():
 
     for scraper_name, scraper_fn in [
         ("state_farm", scrape_state_farm),
-        ("athletics", scrape_athletics),
-        ("general", scrape_general),
-        ("kcpa", scrape_kcpa),
-        ("kam", scrape_kam),
+        ("athletics",  scrape_athletics),
+        ("general",    scrape_general),
+        ("kcpa",       scrape_kcpa),
+        ("kam",        scrape_kam),
+        ("music",      scrape_music),
+        ("spurlock",   scrape_spurlock),
     ]:
         source_events = {}
         try:

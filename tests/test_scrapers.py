@@ -95,7 +95,9 @@ class TestScrape(unittest.TestCase):
              patch("scrape.scrape_state_farm", return_value={}), \
              patch("scrape.scrape_athletics",  return_value={}), \
              patch("scrape.scrape_kcpa",       return_value={}), \
-             patch("scrape.scrape_kam",        return_value={}):
+             patch("scrape.scrape_kam",        return_value={}), \
+             patch("scrape.scrape_music",      return_value={}), \
+             patch("scrape.scrape_spurlock",   return_value={}):
             result = scrape.scrape()
             self.assertEqual(len(result), 0)
 

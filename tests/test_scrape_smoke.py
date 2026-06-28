@@ -309,11 +309,13 @@ class TestScrapeIntegration(unittest.TestCase):
              patch.object(scrape, "scrape_state_farm", return_value={0: {"summary": "SF"}}), \
              patch.object(scrape, "scrape_athletics",  return_value={0: {"summary": "A"}}), \
              patch.object(scrape, "scrape_kcpa",       return_value={0: {"summary": "KC"}}), \
-             patch.object(scrape, "scrape_kam",        return_value={0: {"summary": "KAM"}}):
+             patch.object(scrape, "scrape_kam",        return_value={0: {"summary": "KAM"}}), \
+             patch.object(scrape, "scrape_music",      return_value={0: {"summary": "MUS"}}), \
+             patch.object(scrape, "scrape_spurlock",   return_value={0: {"summary": "SPU"}}):
             data = scrape.scrape()
-        self.assertEqual(len(data), 5)
+        self.assertEqual(len(data), 7)
         summaries = {e["summary"] for e in data.values()}
-        self.assertEqual(summaries, {"G", "SF", "A", "KC", "KAM"})
+        self.assertEqual(summaries, {"G", "SF", "A", "KC", "KAM", "MUS", "SPU"})
 
     def test_main_raises_when_all_empty(self):
         def fake_scrape():
@@ -323,6 +325,8 @@ class TestScrapeIntegration(unittest.TestCase):
                 "general":    {"events": 0, "status": "empty_or_failed"},
                 "kcpa":       {"events": 0, "status": "empty_or_failed"},
                 "kam":        {"events": 0, "status": "empty_or_failed"},
+                "music":      {"events": 0, "status": "empty_or_failed"},
+                "spurlock":   {"events": 0, "status": "empty_or_failed"},
             }
             return {}
 
@@ -338,7 +342,9 @@ class TestScrapeIntegration(unittest.TestCase):
              patch.object(scrape, "scrape_athletics",  return_value={}), \
              patch.object(scrape, "scrape_general",    return_value={0: {"summary": "G"}}), \
              patch.object(scrape, "scrape_kcpa",       return_value={}), \
-             patch.object(scrape, "scrape_kam",        return_value={}):
+             patch.object(scrape, "scrape_kam",        return_value={}), \
+             patch.object(scrape, "scrape_music",      return_value={}), \
+             patch.object(scrape, "scrape_spurlock",   return_value={}):
             data = scrape.scrape()
 
         self.assertEqual(len(data), 1)
