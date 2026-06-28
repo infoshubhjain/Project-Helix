@@ -8,7 +8,8 @@
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self';
                  script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net;
-                 style-src 'self' 'unsafe-inline';
+                 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+                 font-src 'self' https://fonts.gstatic.com;
                  frame-src https://calendar.google.com;
                  connect-src 'self' https://www.googleapis.com https://calendar.google.com;
                  img-src 'self' data: https:;">
@@ -173,23 +174,23 @@
         <h2 id="detail-title"></h2>
         <div class="detail-info">
           <div class="detail-row">
-            <span class="detail-label">📅 Date:</span>
+            <span class="detail-label">Date</span>
             <span id="detail-date"></span>
           </div>
           <div class="detail-row">
-            <span class="detail-label">🕐 Time:</span>
+            <span class="detail-label">Time</span>
             <span id="detail-time"></span>
           </div>
           <div class="detail-row">
-            <span class="detail-label">📍 Location:</span>
+            <span class="detail-label">Location</span>
             <span id="detail-location"></span>
           </div>
           <div class="detail-row">
-            <span class="detail-label">🏷️ Category:</span>
+            <span class="detail-label">Category</span>
             <span id="detail-tag" class="event-tag"></span>
           </div>
           <div class="detail-row description">
-            <span class="detail-label">📝 Description:</span>
+            <span class="detail-label">About</span>
             <p id="detail-description"></p>
           </div>
           <a id="detail-link" href="#" target="_blank" class="event-link">View Event Page →</a>

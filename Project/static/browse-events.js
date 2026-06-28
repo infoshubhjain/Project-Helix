@@ -52,13 +52,15 @@ document.addEventListener("DOMContentLoaded", function () {
     for (let i = 0; i < count; i++) {
       html += `
         <div class="skeleton-card">
-          <div class="skeleton skeleton-line short"></div>
-          <div class="skeleton skeleton-line title"></div>
-          <div class="skeleton skeleton-line"></div>
-          <div class="skeleton skeleton-line"></div>
-          <div class="skeleton-footer">
-            <div class="skeleton skeleton-tag"></div>
-            <div class="skeleton skeleton-btn"></div>
+          <div class="skeleton skeleton-date"></div>
+          <div class="skeleton-body">
+            <div class="skeleton skeleton-line title"></div>
+            <div class="skeleton skeleton-line short"></div>
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton-footer">
+              <div class="skeleton skeleton-tag"></div>
+              <div class="skeleton skeleton-btn"></div>
+            </div>
           </div>
         </div>`;
     }
@@ -637,41 +639,65 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // ========== STEP 4: Create a Single Event Card (glass style) ==========
-  const syncIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
+  // ========== STEP 4: Create a Single Event Card ==========
+  const syncIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/></svg>';
 
   function createEventCard(event) {
-    let card = document.createElement('div');
+    const card = document.createElement('div');
     card.className = 'event-card-browse';
+
+    // Parse date for stamp
+    let monthStr = '', dayStr = '', dowStr = '';
+    if (event.start) {
+      const d = new Date(event.start);
+      if (!isNaN(d.getTime())) {
+        monthStr = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+        dayStr   = d.getDate().toString();
+        dowStr   = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+      }
+    }
 
     let time = event.start_time;
     if (event.start_time === "12:00 AM" && event.end_time === "11:59 PM") time = "All Day";
 
-    const tag = event.tag || 'General';
-    const tagClass = getTagClass(tag); // returns a fixed safe CSS class name
-    const dateStr = escapeHtml(event.start_date || 'Date TBA');
-    const timeStr = escapeHtml(time || 'Time TBA');
-    const locationStr = escapeHtml(event.location || 'Location TBA');
-    const title = escapeHtml(event.summary || 'Untitled Event');
-    const descriptionPreview = escapeHtml(buildDescriptionPreview(event));
+    const tag             = event.tag || 'General';
+    const tagClass        = getTagClass(tag);
+    const timeStr         = escapeHtml(time || 'TBA');
+    const locationStr     = escapeHtml((event.location || 'Location TBA').split(',')[0]);
+    const title           = escapeHtml(event.summary || 'Untitled Event');
+    const descPreview     = escapeHtml(buildDescriptionPreview(event));
 
-    let html = '<div class="event-card-meta">';
-    html += '<span>📅 ' + dateStr + '</span>';
-    html += '<span>🕐 ' + timeStr + '</span>';
-    html += '</div>';
+    let html = '';
+
+    // Date stamp column
+    if (dayStr) {
+      html += '<div class="card-date-stamp">';
+      html += '<span class="card-month">' + monthStr + '</span>';
+      html += '<span class="card-day">'   + dayStr   + '</span>';
+      html += '<span class="card-dow">'   + dowStr   + '</span>';
+      html += '</div>';
+    }
+
+    // Content column
+    html += '<div class="card-body">';
     html += '<div class="event-card-title">' + title + '</div>';
-    html += '<div class="event-card-info"><strong>📍</strong><span>' + locationStr + '</span></div>';
-    html += '<p class="event-card-description">' + descriptionPreview + '</p>';
+    html += '<div class="event-card-meta">';
+    html += '<span class="meta-time">' + timeStr + '</span>';
+    html += '<span class="meta-sep">·</span>';
+    html += '<span class="meta-loc">' + locationStr + '</span>';
+    html += '</div>';
+    if (descPreview) {
+      html += '<p class="event-card-description">' + descPreview + '</p>';
+    }
     html += '<div class="event-card-footer">';
     html += '<span class="event-tag ' + tagClass + '">' + escapeHtml(tag) + '</span>';
     html += '<div class="card-actions">';
     html += '<button type="button" class="show-more-btn">Details</button>';
     html += '<button type="button" class="add-to-calendar-btn" title="Add to Google Calendar">' + syncIcon + '</button>';
-    html += '</div></div>';
+    html += '</div></div></div>';
 
     card.innerHTML = html;
-
-    card.querySelector('.show-more-btn').onclick = (e) => { e.stopPropagation(); showEventDetails(event); };
+    card.querySelector('.show-more-btn').onclick       = (e) => { e.stopPropagation(); showEventDetails(event); };
     card.querySelector('.add-to-calendar-btn').onclick = (e) => { e.stopPropagation(); addToCalendar(event); };
 
     return card;
