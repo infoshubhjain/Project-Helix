@@ -157,24 +157,8 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  function escapeHtml(str) {
-    const d = document.createElement('div');
-    d.textContent = String(str == null ? '' : str);
-    return d.innerHTML;
-  }
-
-  // Map tag name to CSS class for distinct category colors (WCAG-friendly)
-  function getTagClass(tag) {
-    if (!tag) return 'tag-general';
-    const t = tag.toLowerCase();
-    if (t.includes('free food')) return 'tag-freefood';
-    if (t.includes('athletic')) return 'tag-athletics';
-    if (t.includes('academic')) return 'tag-academic';
-    if (t.includes('art')) return 'tag-arts';
-    if (t.includes('sport')) return 'tag-sports';
-    if (t.includes('entertainment')) return 'tag-entertainment';
-    return 'tag-general';
-  }
+  // Shared pure helpers (also unit-tested in tests/js/event-utils.test.js)
+  const { escapeHtml, getTagClass, getEventCategories, formatDate, formatTime } = window.HelixUtils;
 
   // ========== Parse Event Data ==========
   // Convert scraper format to display format
@@ -217,29 +201,6 @@ document.addEventListener("DOMContentLoaded", function () {
     return `${event.description.slice(0, 137)}...`;
   }
 
-  // ========== Format Date Helper ==========
-  function formatDate(date) {
-    // Returns "Month Day, Year" format (e.g., "November 30, 2025")
-    const monthNames = [
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December"
-    ];
-    const month = monthNames[date.getMonth()];
-    const day = date.getDate();
-    const year = date.getFullYear();
-    return `${month} ${day}, ${year}`;
-  }
-
-  // ========== Format Time Helper ==========
-  function formatTime(date) {
-    // Returns "HH:MM AM/PM" format
-    let hours = date.getHours();
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12; // Convert to 12-hour format
-    return `${hours}:${minutes} ${ampm}`;
-  }
-
   // ========== Sort Events by Date/Time ==========
   function sortEventsByTime() {
     allEvents.sort((a, b) => getEventDateTime(a) - getEventDateTime(b));
@@ -276,12 +237,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // ========== STEP 2: Setup Category Filter (dropdown + chips) ==========
   function setupCategories() {
-    let categories = [];
+    // Build the chip set from canonical categories so compound tags
+    // (e.g. "Academic, Free Food 🍕") don't fragment the filter.
+    const present = new Set();
     for (let i = 0; i < allEvents.length; i++) {
-      let tag = allEvents[i].tag;
-      if (tag && !categories.includes(tag)) categories.push(tag);
+      getEventCategories(allEvents[i].tag).forEach(c => present.add(c));
     }
-    categories.sort();
+    // Preserve the canonical display order, then any extras alphabetically.
+    const ordered = window.HelixUtils.CANONICAL_CATEGORIES.filter(c => present.has(c));
+    const categories = ordered.concat([...present].filter(c => !ordered.includes(c)).sort());
 
     // Dropdown
     for (let i = 0; i < categories.length; i++) {
@@ -825,11 +789,11 @@ document.addEventListener("DOMContentLoaded", function () {
     for (let i = 0; i < searchResults.length; i++) {
       let event = searchResults[i];
 
-      // Check if event matches selected category
+      // Check if event matches selected category (canonical, multi-category aware)
       let matchesCategory = false;
       if (selectedCategory === 'all') {
         matchesCategory = true;
-      } else if (event.tag === selectedCategory) {
+      } else if (getEventCategories(event.tag).includes(selectedCategory)) {
         matchesCategory = true;
       }
 

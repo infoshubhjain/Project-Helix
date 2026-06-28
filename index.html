@@ -12,9 +12,14 @@
                  font-src 'self' https://fonts.gstatic.com;
                  frame-src https://calendar.google.com;
                  connect-src 'self' https://www.googleapis.com https://calendar.google.com;
+                 worker-src 'self';
+                 manifest-src 'self';
                  img-src 'self' data: https:;">
+  <meta name="theme-color" content="#0C0C0C">
   <link rel="stylesheet" href="Project/static/style.css">
   <link rel="icon" type="image/png" href="Project/static/images/favicon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="Project/static/images/favicon.png">
   <!-- Google API Libraries -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://apis.google.com/js/api.js" async defer></script>
@@ -294,12 +299,24 @@
   <!-- Toast Notification Container -->
   <div id="toast-container"></div>
 
+  <script src="Project/static/event-utils.js"></script>
   <script src="Project/static/manual-event-parser.js"></script>
   <script src="Project/static/manual-event-handler.js"></script>
   <script src="Project/static/export.js"></script>
   <script src="Project/static/calendar-connect.js"></script>
   <script src="Project/static/script.js"></script>
   <script src="Project/static/browse-events.js"></script>
+
+  <!-- PWA: register service worker for offline support + instant repeat loads -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('service-worker.js').catch(function (err) {
+          console.warn('Service worker registration failed:', err);
+        });
+      });
+    }
+  </script>
 
   <footer>
     Copyright © 2025 Project Helix

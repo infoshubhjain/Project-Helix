@@ -217,6 +217,57 @@ def detect_free_food(event_info):
 
     return event_info
 
+# Category keyword map — checked in priority order; first match wins.
+# Keywords are matched on word boundaries against summary + description + location.
+CATEGORY_KEYWORDS = [
+    ("Athletics", [
+        "basketball", "football", "volleyball", "soccer", "baseball", "softball",
+        "tennis", "wrestling", "gymnastics", "track meet", "cross country",
+        "tournament", "scrimmage", "vs.", "match", "home game", "fighting illini",
+    ]),
+    ("Performances", [
+        "concert", "recital", "symphony", "orchestra", "opera", "jazz",
+        "ensemble", "musical", "theatre", "theater", "ballet", "choir",
+        "chorus", "performance", "live music", "cabaret", "philharmonic",
+    ]),
+    ("Arts", [
+        "exhibit", "exhibition", "gallery", "museum", "sculpture", "painting",
+        "photography", "film screening", "screening", "poetry reading",
+        "art show", "artmaking", "craft", "ceramics",
+    ]),
+    ("Academic", [
+        "lecture", "seminar", "colloquium", "symposium", "conference",
+        "workshop", "defense", "dissertation", "thesis", "prelim",
+        "qualifying exam", "final exam", "webinar", "info session",
+        "information session", "advising", "research", "tutorial",
+        "guest speaker", "distinguished", "panel", "journal club",
+        "office hours", "study abroad", "career fair", "graduation",
+        "commencement", "orientation",
+    ]),
+    ("Entertainment", [
+        "comedy", "movie", "trivia", "game night", "karaoke", "bingo",
+        "open mic", "tailgate",
+    ]),
+    ("Community", [
+        "festival", "fair", "market", "volunteer", "fundraiser", "community",
+        "open house", "celebration", "family", "storytime", "story time",
+        "book club", "drop-in", "wellness", "yoga", "meditation", "support group",
+    ]),
+]
+
+_CATEGORY_PATTERNS = [
+    (cat, re.compile(r"\b(?:" + "|".join(re.escape(k) for k in kws) + r")\b", re.IGNORECASE))
+    for cat, kws in CATEGORY_KEYWORDS
+]
+
+def classify_event(summary: str, description: str = "", location: str = "") -> str:
+    """Infer a category from event text. Returns a canonical category or 'General'."""
+    text = " ".join([summary or "", description or "", location or ""])
+    for category, pattern in _CATEGORY_PATTERNS:
+        if pattern.search(text):
+            return category
+    return "General"
+
 def cap_events(events: Dict[Any, Dict[str, Any]], max_events: int) -> Dict[Any, Dict[str, Any]]:
     """Cap source events to avoid runaway growth from parser/site changes."""
     if not isinstance(events, dict):
@@ -283,7 +334,6 @@ def scrape_general() -> Dict[str, Any]:
                         # Attempt to parse date to confirm it's a date header
                         # Format: DayOfWeek, Month Day, Year
                         current_date_obj = datetime.strptime(date_str, "%A, %B %d, %Y")
-                        current_date_str = current_date_obj.strftime("%Y-%m-%d")
                     except ValueError:
                         # Not a date header, skip
                         continue
@@ -329,8 +379,10 @@ def scrape_general() -> Dict[str, Any]:
                                         location = loc_tag.get_text(strip=True)
 
                                 event_info["location"] = location
-                                event_info["tag"] = "General"
                                 event_info["description"] = "" # List view doesn't have full description
+                                event_info["tag"] = classify_event(
+                                    event_info["summary"], "", location
+                                )
                                 
                                 # Parse Time
                                 start_dt = None
@@ -1215,7 +1267,7 @@ def scrape_urbana_library() -> Dict[str, Any]:
                     m = re.match(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", tok.strip(), re.IGNORECASE)
                     if not m:
                         return None
-                    h = int(m.group(1)); mn = int(m.group(2) or 0); mer = m.group(3).lower()
+                    h, mn, mer = int(m.group(1)), int(m.group(2) or 0), m.group(3).lower()
                     if mer == "pm" and h != 12: h += 12
                     elif mer == "am" and h == 12: h = 0
                     return h, mn
@@ -1454,6 +1506,74 @@ def scrape_cs() -> Dict[str, Any]:
     return events
 
 
+# Sources that should always return events; zero means a likely outage/markup break.
+CRITICAL_SOURCES = {"general", "parkland", "urbana_library"}
+
+
+def drop_past_events(events: Dict[Any, Dict[str, Any]], now: Optional[datetime] = None) -> Dict[Any, Dict[str, Any]]:
+    """Remove events whose end time is already in the past (re-keyed sequentially)."""
+    TZ = ZoneInfo("America/Chicago")
+    if now is None:
+        now = datetime.now(tz=TZ)
+
+    result: Dict[int, Any] = {}
+    for ev in events.values():
+        end_raw = ev.get("end") or ev.get("start")
+        if not end_raw:
+            result[len(result)] = ev
+            continue
+        try:
+            end_dt = datetime.fromisoformat(end_raw)
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=TZ)
+        except (ValueError, TypeError):
+            result[len(result)] = ev  # keep if unparseable
+            continue
+        if end_dt >= now:
+            result[len(result)] = ev
+    return result
+
+
+def _normalize_title(title: str) -> str:
+    """Lowercase and collapse non-alphanumerics for fuzzy title comparison."""
+    return re.sub(r"[^a-z0-9]+", " ", (title or "").lower()).strip()
+
+
+def dedupe_events(events: Dict[Any, Dict[str, Any]]) -> Dict[Any, Dict[str, Any]]:
+    """Drop duplicate events across sources, keyed by (normalized title, start datetime).
+
+    The start is compared to the minute so the same event listed on several
+    department calendars collapses, while two same-titled sessions at different
+    times on one day (e.g. recurring tutoring) stay separate. On collision the
+    entry with the richer (longer) description wins, so the more detailed source
+    prevails (e.g. KCPA over a bare calendars.illinois.edu row). Events lacking a
+    title or start are always kept.
+    """
+    chosen: Dict[Any, Dict[str, Any]] = {}
+    order: List[Any] = []
+
+    for ev in events.values():
+        title = _normalize_title(ev.get("summary", ""))
+        start = (ev.get("start") or "")[:16]  # YYYY-MM-DDTHH:MM
+        if not title or not start:
+            key = ("__unique__", len(order))
+        else:
+            key = (title, start)
+
+        if key not in chosen:
+            chosen[key] = ev
+            order.append(key)
+        else:
+            existing = chosen[key]
+            if len(ev.get("description") or "") > len(existing.get("description") or ""):
+                chosen[key] = ev
+
+    result: Dict[int, Any] = {}
+    for key in order:
+        result[len(result)] = chosen[key]
+    return result
+
+
 # Scrape All Function
 def scrape():
     global last_scrape_stats
@@ -1491,7 +1611,17 @@ def scrape():
             last_scrape_stats[scraper_name] = {"events": source_count, "status": status}
 
     logger.info("Scrape summary by source: %s", last_scrape_stats)
-    logger.info("Total merged events: %s", len(combined_json_data))
+
+    raw_count = len(combined_json_data)
+    combined_json_data = drop_past_events(combined_json_data)
+    after_past = len(combined_json_data)
+    combined_json_data = dedupe_events(combined_json_data)
+    after_dedupe = len(combined_json_data)
+    logger.info(
+        "Post-processing: %d merged -> %d after past-filter (-%d) -> %d after dedupe (-%d)",
+        raw_count, after_past, raw_count - after_past, after_dedupe, after_past - after_dedupe,
+    )
+    logger.info("Total events: %s", len(combined_json_data))
 
     return combined_json_data
 def main():
@@ -1500,12 +1630,25 @@ def main():
     source_event_total = sum(stat.get("events", 0) for stat in last_scrape_stats.values())
     if source_event_total == 0:
         raise RuntimeError("All sources returned zero events. Failing run to surface scraper outage.")
-    
+
+    # Health check — fail (and skip the save) if a critical source produced nothing,
+    # so a markup break surfaces in CI instead of silently shipping degraded data.
+    broken = sorted(
+        name for name in CRITICAL_SOURCES
+        if last_scrape_stats.get(name, {}).get("events", 0) == 0
+    )
+    if broken:
+        raise RuntimeError(
+            f"Critical source(s) returned zero events: {', '.join(broken)}. "
+            "Likely a site or markup change — failing run to surface the outage "
+            "and preserve the previously committed data."
+        )
+
     # Save to JSON file (minified for faster loading)
     output_file = os.path.join(os.path.dirname(__file__), "scraped_events.json")
     with open(output_file, "w") as f:
         json.dump(data, f, separators=(',', ':'))
-        
+
     print(f"Scraped {len(data)} events. Saved to {output_file}")
     
 if __name__ == "__main__":

@@ -664,6 +664,8 @@ body.dark-mode #search-events:focus {
 .event-tag.tag-arts         { opacity: 0.70; }
 .event-tag.tag-freefood     { background: var(--accent); opacity: 1; }
 .event-tag.tag-performances { opacity: 0.80; }
+.event-tag.tag-community    { opacity: 0.65; }
+.event-tag.tag-entertainment{ opacity: 0.90; }
 
 .card-actions {
   display: flex;

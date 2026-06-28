@@ -106,5 +106,100 @@ class TestScrape(unittest.TestCase):
             self.assertEqual(len(result), 0)
 
 
+class TestClassifyEvent(unittest.TestCase):
+    def test_categories(self):
+        cases = [
+            ("Intro to CS Lecture", "Academic"),
+            ("PhD Dissertation Defense", "Academic"),
+            ("Spring Jazz Concert", "Performances"),
+            ("Symphony Orchestra Recital", "Performances"),
+            ("Illini Basketball vs Purdue", "Athletics"),
+            ("Photography Exhibition", "Arts"),
+            ("Community Wellness Fair", "Community"),
+            ("Family Storytime", "Community"),
+            ("Comedy Night Open Mic", "Entertainment"),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(scrape.classify_event(text), expected)
+
+    def test_unknown_returns_general(self):
+        self.assertEqual(scrape.classify_event("Mysterious Untagged Thing"), "General")
+
+    def test_word_boundary_avoids_false_positive(self):
+        # "start" must not match the "art" keyword
+        self.assertEqual(scrape.classify_event("Project Kickoff to start the term"), "General")
+
+
+class TestDropPastEvents(unittest.TestCase):
+    def setUp(self):
+        from zoneinfo import ZoneInfo
+        self.TZ = ZoneInfo("America/Chicago")
+        self.now = datetime(2026, 6, 28, 12, 0, tzinfo=self.TZ)
+
+    def test_drops_past_keeps_future(self):
+        events = {
+            0: {"summary": "Past", "start": "2026-06-01T10:00:00-05:00", "end": "2026-06-01T11:00:00-05:00"},
+            1: {"summary": "Future", "start": "2026-07-01T10:00:00-05:00", "end": "2026-07-01T11:00:00-05:00"},
+        }
+        kept = scrape.drop_past_events(events, now=self.now)
+        self.assertEqual([e["summary"] for e in kept.values()], ["Future"])
+
+    def test_keeps_event_ending_now_or_later(self):
+        events = {0: {"summary": "Ongoing", "start": "2026-06-28T11:00:00-05:00", "end": "2026-06-28T23:00:00-05:00"}}
+        kept = scrape.drop_past_events(events, now=self.now)
+        self.assertEqual(len(kept), 1)
+
+    def test_keeps_unparseable(self):
+        events = {0: {"summary": "Bad", "start": "not-a-date", "end": "also-bad"}}
+        kept = scrape.drop_past_events(events, now=self.now)
+        self.assertEqual(len(kept), 1)
+
+    def test_rekeys_sequentially(self):
+        events = {
+            5: {"summary": "Future A", "start": "2026-07-01T10:00:00-05:00", "end": "2026-07-01T11:00:00-05:00"},
+            9: {"summary": "Future B", "start": "2026-07-02T10:00:00-05:00", "end": "2026-07-02T11:00:00-05:00"},
+        }
+        kept = scrape.drop_past_events(events, now=self.now)
+        self.assertEqual(sorted(kept.keys()), [0, 1])
+
+
+class TestDedupeEvents(unittest.TestCase):
+    def test_collapses_cross_source_duplicates(self):
+        # Same title + same start time from two feeds → one event, richer wins.
+        events = {
+            0: {"summary": "Krannert Uncorked", "start": "2026-07-16T17:30:00-05:00", "description": ""},
+            1: {"summary": "Krannert  Uncorked!", "start": "2026-07-16T17:30:00-05:00", "description": "Full details"},
+        }
+        out = scrape.dedupe_events(events)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(list(out.values())[0]["description"], "Full details")
+
+    def test_keeps_same_title_different_time_same_day(self):
+        # Distinct sessions (e.g. recurring tutoring) must NOT be merged.
+        events = {
+            0: {"summary": "Drop-in Tutoring", "start": "2026-07-16T07:00:00-05:00", "description": ""},
+            1: {"summary": "Drop-in Tutoring", "start": "2026-07-16T12:00:00-05:00", "description": ""},
+        }
+        out = scrape.dedupe_events(events)
+        self.assertEqual(len(out), 2)
+
+    def test_keeps_same_title_different_day(self):
+        events = {
+            0: {"summary": "Yoga Class", "start": "2026-07-16T10:00:00-05:00", "description": ""},
+            1: {"summary": "Yoga Class", "start": "2026-07-17T10:00:00-05:00", "description": ""},
+        }
+        out = scrape.dedupe_events(events)
+        self.assertEqual(len(out), 2)
+
+    def test_keeps_events_without_title_or_date(self):
+        events = {
+            0: {"summary": "", "start": "2026-07-16T10:00:00-05:00", "description": ""},
+            1: {"summary": "Thing", "start": "", "description": ""},
+        }
+        out = scrape.dedupe_events(events)
+        self.assertEqual(len(out), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
