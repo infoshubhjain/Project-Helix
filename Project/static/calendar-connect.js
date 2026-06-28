@@ -304,7 +304,7 @@ async function onCalendarConnected() {
             if (cal.selected !== false) {
                 iframeSrc += `src=${encodeURIComponent(cal.id)}&`;
                 if (cal.backgroundColor) {
-                    iframeSrc += `color=${encodeURIComponent(cal.backgroundColor.replace('#', '%23'))}&`;
+                    iframeSrc += `color=${encodeURIComponent(cal.backgroundColor)}&`;
                 }
             }
         });
