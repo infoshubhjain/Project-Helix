@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import os
 import re
 import json
+import html
 import time
 import logging
 from typing import Dict, List, Optional, Any
@@ -65,11 +66,16 @@ GENERAL_CALENDAR_LINKS = [
     "https://calendars.illinois.edu/list/75",   # Saturday Physics for Everyone
     "https://calendars.illinois.edu/list/79",   # Materials Research Laboratory
     "https://calendars.illinois.edu/list/25",   # Center for Advanced Study
+    "https://calendars.illinois.edu/list/7767", # Illinois Public Media (WILL)
 ]
 KCPA_CALENDAR_LINK    = "https://krannertcenter.com/calendar"
 KAM_EVENTS_LINK       = "https://kam.illinois.edu/exhibitions-events/events"
 MUSIC_EVENTS_LINK     = "https://music.illinois.edu/events"
 SPURLOCK_EVENTS_LINK  = "https://spurlock.illinois.edu/events"
+PARKLAND_EVENTS_JSON  = "https://25livepub.collegenet.com/calendars/Website-Events.json"
+URBANA_LIBRARY_WIDGET = "https://urbanafreelibrary.libnet.info/widget?id=15863&style=1168&location=1672"
+GIES_EVENTS_LINK      = "https://giesbusiness.illinois.edu/events"
+CS_CALENDAR_LINK      = "https://siebelschool.illinois.edu/news/calendar"
 STATE_FARM_CENTER_CALENDAR_LINK = "https://www.statefarmcenter.com/events/all"
 ATHLETIC_TICKET_LINKS = [
     "https://fightingillini.com/sports/football/schedule",
@@ -1066,6 +1072,388 @@ def scrape_spurlock() -> Dict[str, Any]:
     return events
 
 
+def scrape_parkland() -> Dict[str, Any]:
+    """Scrape Parkland College events from its 25Live Publisher JSON feed.
+
+    Feed: https://25livepub.collegenet.com/calendars/Website-Events.json
+    Each event has ISO startDateTime/endDateTime (naive, America/Chicago),
+    HTML-encoded title and HTML-body description.
+    """
+    events: Dict[int, Any] = {}
+    local_count = 0
+    session = create_robust_session()
+    TZ = ZoneInfo("America/Chicago")
+
+    print("\n🔍 Scraping Parkland College events...")
+    try:
+        response = safe_request(PARKLAND_EVENTS_JSON, session)
+        if not response:
+            print("   ❌ Failed to fetch Parkland feed")
+            return events
+
+        try:
+            feed = response.json()
+        except ValueError as e:
+            logger.error("Parkland: invalid JSON: %s", e)
+            return events
+
+        print(f"   Found {len(feed)} feed entries")
+        for item in feed:
+            try:
+                if item.get("canceled"):
+                    continue
+
+                summary = html.unescape(item.get("title", "")).strip()
+                if not summary:
+                    continue
+
+                # Strip HTML from description
+                raw_desc = item.get("description", "") or ""
+                description = BeautifulSoup(raw_desc, "lxml").get_text(" ", strip=True)[:500]
+
+                location = html.unescape(item.get("location", "") or "").strip()
+                if not location:
+                    location = "Parkland College, 2400 W Bradley Ave, Champaign, IL 61821"
+
+                start_raw = item.get("startDateTime", "")
+                end_raw   = item.get("endDateTime", "")
+                if not start_raw:
+                    continue
+
+                # Parse naive ISO "2026-06-30T13:00:00" and attach tz
+                start_naive = datetime.fromisoformat(start_raw)
+                start_dt = start_naive.replace(tzinfo=TZ)
+
+                if item.get("allDay"):
+                    start_dt = datetime(start_naive.year, start_naive.month, start_naive.day, 0, 0, tzinfo=TZ)
+                    end_dt   = datetime(start_naive.year, start_naive.month, start_naive.day, 23, 59, tzinfo=TZ)
+                elif end_raw:
+                    end_dt = datetime.fromisoformat(end_raw).replace(tzinfo=TZ)
+                else:
+                    end_dt = start_dt + timedelta(hours=1)
+
+                web_link = item.get("permaLinkUrl") or item.get("webLink") or PARKLAND_EVENTS_JSON
+
+                event_info = {
+                    "summary": summary,
+                    "description": description,
+                    "location": location,
+                    "tag": "Community",
+                    "htmlLink": web_link,
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                }
+                event_info = detect_free_food(event_info)
+                if validate_event(event_info):
+                    events[local_count] = event_info
+                    local_count += 1
+
+            except Exception as e:
+                logger.error("Parkland: error parsing event: %s", e)
+                continue
+
+    except Exception as e:
+        print(f"   ❌ Error in scrape_parkland: {e}")
+
+    print(f"   ✅ Parkland: {local_count} events scraped")
+    return events
+
+
+def scrape_urbana_library() -> Dict[str, Any]:
+    """Scrape Urbana Free Library events from its Communico widget.
+
+    Widget renders <div class="amev-event"> rows with title/time/location.
+    Time format: "Sun, Jun 28, 1:00pm - 2:00pm" (no year — inferred).
+    """
+    events: Dict[int, Any] = {}
+    local_count = 0
+    session = create_robust_session()
+    TZ = ZoneInfo("America/Chicago")
+
+    print("\n🔍 Scraping Urbana Free Library events...")
+    try:
+        response = safe_request(URBANA_LIBRARY_WIDGET, session)
+        if not response:
+            print("   ❌ Failed to fetch Urbana Free Library widget")
+            return events
+
+        soup = BeautifulSoup(response.text, "lxml")
+        rows = soup.find_all(class_="amev-event")
+        print(f"   Found {len(rows)} event rows")
+
+        now = datetime.now(tz=TZ)
+        seen_hrefs: set = set()
+        for row in rows:
+            try:
+                title_el = row.find(class_="amev-event-title")
+                link_el = title_el.find("a") if title_el else None
+                if not link_el:
+                    continue
+                summary = link_el.get_text(strip=True)
+                href = link_el.get("href", "")
+                if not summary or href in seen_hrefs:
+                    continue
+                seen_hrefs.add(href)
+
+                time_el = row.find(class_="amev-event-time")
+                time_text = time_el.get_text(" ", strip=True) if time_el else ""
+
+                loc_el = row.find(class_="amev-event-location")
+                location = loc_el.get_text(" ", strip=True) if loc_el else "The Urbana Free Library, 210 W Green St, Urbana, IL 61801"
+
+                # Parse "Sun, Jun 28, 1:00pm - 2:00pm" → month, day, start/end time
+                date_m = re.search(r"(\w{3}),\s*(\w{3})\s+(\d{1,2})", time_text)
+                if not date_m:
+                    logger.warning("Urbana: could not parse date %r", time_text)
+                    continue
+                month_num = parse_month_to_number(date_m.group(2))
+                day = int(date_m.group(3))
+                # Infer year: if month is before current month, assume next year
+                year = now.year if month_num >= now.month else now.year + 1
+
+                def _parse_clock(tok: str):
+                    m = re.match(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", tok.strip(), re.IGNORECASE)
+                    if not m:
+                        return None
+                    h = int(m.group(1)); mn = int(m.group(2) or 0); mer = m.group(3).lower()
+                    if mer == "pm" and h != 12: h += 12
+                    elif mer == "am" and h == 12: h = 0
+                    return h, mn
+
+                times = re.findall(r"\d{1,2}(?::\d{2})?\s*(?:am|pm)", time_text, re.IGNORECASE)
+                if times:
+                    st = _parse_clock(times[0])
+                    start_dt = datetime(year, month_num, day, st[0], st[1], tzinfo=TZ) if st else datetime(year, month_num, day, 9, 0, tzinfo=TZ)
+                    if len(times) > 1:
+                        et = _parse_clock(times[1])
+                        end_dt = datetime(year, month_num, day, et[0], et[1], tzinfo=TZ) if et else start_dt + timedelta(hours=1)
+                    else:
+                        end_dt = start_dt + timedelta(hours=1)
+                else:
+                    start_dt = datetime(year, month_num, day, 0, 0, tzinfo=TZ)
+                    end_dt   = datetime(year, month_num, day, 23, 59, tzinfo=TZ)
+
+                event_info = {
+                    "summary": summary,
+                    "description": "",
+                    "location": location,
+                    "tag": "Community",
+                    "htmlLink": href,
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                }
+                event_info = detect_free_food(event_info)
+                if validate_event(event_info):
+                    events[local_count] = event_info
+                    local_count += 1
+
+            except Exception as e:
+                logger.error("Urbana: error parsing row: %s", e)
+                continue
+
+    except Exception as e:
+        print(f"   ❌ Error in scrape_urbana_library: {e}")
+
+    print(f"   ✅ Urbana Free Library: {local_count} events scraped")
+    return events
+
+
+def scrape_gies() -> Dict[str, Any]:
+    """Scrape Gies College of Business events.
+
+    List page: https://giesbusiness.illinois.edu/events
+    Structure: <div class="event-item"> with title link (date in URL path
+    /event/YYYY/MM/DD/...) and <time class="event-time"> "6:00 PM - 7:00 PM".
+    """
+    events: Dict[int, Any] = {}
+    local_count = 0
+    session = create_robust_session()
+    TZ = ZoneInfo("America/Chicago")
+
+    print("\n🔍 Scraping Gies College of Business events...")
+    try:
+        response = safe_request(GIES_EVENTS_LINK, session)
+        if not response:
+            print("   ❌ Failed to fetch Gies events page")
+            return events
+
+        soup = BeautifulSoup(response.text, "lxml")
+        rows = soup.find_all(class_="event-item")
+        print(f"   Found {len(rows)} event items")
+
+        seen_hrefs: set = set()
+        for row in rows:
+            try:
+                link_el = row.find("a")
+                if not link_el:
+                    continue
+                href = link_el.get("href", "")
+                if not href or href in seen_hrefs:
+                    continue
+                seen_hrefs.add(href)
+                event_url = href if href.startswith("http") else "https://giesbusiness.illinois.edu" + href
+                summary = link_el.get_text(strip=True)
+
+                # Date from URL path /event/YYYY/MM/DD/
+                date_m = re.search(r"/event/(\d{4})/(\d{2})/(\d{2})/", href)
+                if not date_m:
+                    logger.warning("Gies: no date in URL %r", href)
+                    continue
+                year, month_num, day = int(date_m.group(1)), int(date_m.group(2)), int(date_m.group(3))
+
+                time_el = row.find(class_="event-time")
+                time_text = time_el.get_text(" ", strip=True) if time_el else ""
+                range_m = re.search(
+                    r"(\d{1,2}):(\d{2})\s*(AM|PM)\s*[-–]\s*(\d{1,2}):(\d{2})\s*(AM|PM)",
+                    time_text, re.IGNORECASE,
+                )
+                single_m = re.search(r"(\d{1,2}):(\d{2})\s*(AM|PM)", time_text, re.IGNORECASE)
+
+                if range_m:
+                    sh, sm, s_mer, eh, em, e_mer = range_m.groups()
+                    sh, sm, eh, em = int(sh), int(sm), int(eh), int(em)
+                    if s_mer.upper() == "PM" and sh != 12: sh += 12
+                    elif s_mer.upper() == "AM" and sh == 12: sh = 0
+                    if e_mer.upper() == "PM" and eh != 12: eh += 12
+                    elif e_mer.upper() == "AM" and eh == 12: eh = 0
+                    start_dt = datetime(year, month_num, day, sh, sm, tzinfo=TZ)
+                    end_dt   = datetime(year, month_num, day, eh, em, tzinfo=TZ)
+                elif single_m:
+                    sh, sm, s_mer = single_m.groups()
+                    sh, sm = int(sh), int(sm)
+                    if s_mer.upper() == "PM" and sh != 12: sh += 12
+                    elif s_mer.upper() == "AM" and sh == 12: sh = 0
+                    start_dt = datetime(year, month_num, day, sh, sm, tzinfo=TZ)
+                    end_dt   = start_dt + timedelta(hours=1)
+                else:
+                    start_dt = datetime(year, month_num, day, 0, 0, tzinfo=TZ)
+                    end_dt   = datetime(year, month_num, day, 23, 59, tzinfo=TZ)
+
+                event_info = {
+                    "summary": summary,
+                    "description": f"Gies College of Business event. See {event_url} for details.",
+                    "location": "Gies College of Business, 515 E Gregory Dr, Champaign, IL 61820",
+                    "tag": "Academic",
+                    "htmlLink": event_url,
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                }
+                event_info = detect_free_food(event_info)
+                if validate_event(event_info):
+                    events[local_count] = event_info
+                    local_count += 1
+
+            except Exception as e:
+                logger.error("Gies: error parsing item: %s", e)
+                continue
+
+    except Exception as e:
+        print(f"   ❌ Error in scrape_gies: {e}")
+
+    print(f"   ✅ Gies: {local_count} events scraped")
+    return events
+
+
+def scrape_cs() -> Dict[str, Any]:
+    """Scrape Siebel School of Computing & Data Science (CS) calendar.
+
+    List page: https://siebelschool.illinois.edu/news/calendar
+    Structure: <div class="event col"> with .title link, and a fa-ul list
+    whose items carry the date ("June 29, 2026"), .time ("Monday, 9:30 AM"),
+    and .location ("Siebel Center Room 3102").
+    """
+    events: Dict[int, Any] = {}
+    local_count = 0
+    session = create_robust_session()
+    TZ = ZoneInfo("America/Chicago")
+
+    print("\n🔍 Scraping Siebel School (CS) calendar...")
+    try:
+        response = safe_request(CS_CALENDAR_LINK, session)
+        if not response:
+            print("   ❌ Failed to fetch CS calendar page")
+            return events
+
+        soup = BeautifulSoup(response.text, "lxml")
+        rows = [e for e in soup.find_all(class_="event")
+                if e.find(class_="title") and "event" in (e.get("class") or [])]
+        print(f"   Found {len(rows)} event blocks")
+
+        seen_hrefs: set = set()
+        for row in rows:
+            try:
+                title_el = row.find(class_="title")
+                link_el = title_el.find("a") if title_el else None
+                if not link_el:
+                    continue
+                href = link_el.get("href", "")
+                if href in seen_hrefs:
+                    continue
+                seen_hrefs.add(href)
+                summary = link_el.get_text(strip=True)
+                if not summary:
+                    continue
+
+                # List items: first non-time/location li holds the date
+                date_text = ""
+                time_text = ""
+                location = "University of Illinois, Urbana, IL"
+                for li in row.find_all("li"):
+                    classes = li.get("class") or []
+                    txt = li.get_text(" ", strip=True)
+                    if "time" in classes:
+                        time_text = txt
+                    elif "location" in classes:
+                        if txt:
+                            location = txt
+                    elif not date_text and re.search(r"\w+\s+\d{1,2},\s*\d{4}", txt):
+                        date_text = txt
+
+                date_m = re.search(r"(\w+)\s+(\d{1,2}),\s*(\d{4})", date_text)
+                if not date_m:
+                    logger.warning("CS: could not parse date %r", date_text)
+                    continue
+                month_num = parse_month_to_number(date_m.group(1))
+                day, year = int(date_m.group(2)), int(date_m.group(3))
+
+                time_m = re.search(r"(\d{1,2}):(\d{2})\s*(AM|PM)", time_text, re.IGNORECASE)
+                if time_m:
+                    sh, sm, mer = int(time_m.group(1)), int(time_m.group(2)), time_m.group(3).upper()
+                    if mer == "PM" and sh != 12: sh += 12
+                    elif mer == "AM" and sh == 12: sh = 0
+                    start_dt = datetime(year, month_num, day, sh, sm, tzinfo=TZ)
+                    end_dt   = start_dt + timedelta(hours=1)
+                else:
+                    start_dt = datetime(year, month_num, day, 0, 0, tzinfo=TZ)
+                    end_dt   = datetime(year, month_num, day, 23, 59, tzinfo=TZ)
+
+                event_url = href if href.startswith("http") else "https://siebelschool.illinois.edu" + href
+
+                event_info = {
+                    "summary": summary,
+                    "description": "",
+                    "location": location,
+                    "tag": "Academic",
+                    "htmlLink": event_url,
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                }
+                event_info = detect_free_food(event_info)
+                if validate_event(event_info):
+                    events[local_count] = event_info
+                    local_count += 1
+
+            except Exception as e:
+                logger.error("CS: error parsing block: %s", e)
+                continue
+
+    except Exception as e:
+        print(f"   ❌ Error in scrape_cs: {e}")
+
+    print(f"   ✅ CS: {local_count} events scraped")
+    return events
+
+
 # Scrape All Function
 def scrape():
     global last_scrape_stats
@@ -1081,6 +1469,10 @@ def scrape():
         ("kam",        scrape_kam),
         ("music",      scrape_music),
         ("spurlock",   scrape_spurlock),
+        ("parkland",   scrape_parkland),
+        ("urbana_library", scrape_urbana_library),
+        ("gies",       scrape_gies),
+        ("cs",         scrape_cs),
     ]:
         source_events = {}
         try:
