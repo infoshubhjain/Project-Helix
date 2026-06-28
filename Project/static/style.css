@@ -93,9 +93,6 @@ header.navbar {
   gap: 10px;
 }
 
-.logo-img { height: 28px; width: auto; }
-.logo-img:first-child { height: 22px; }
-
 header h1 {
   font-size: 0.9375rem;
   font-weight: 600;
