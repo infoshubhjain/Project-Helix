@@ -1573,6 +1573,11 @@ body.dark-mode .skeleton {
   color: var(--text-primary);
 }
 
+.fade-out {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
 /* ========== FOOTER ========== */
 footer {
   text-align: center;

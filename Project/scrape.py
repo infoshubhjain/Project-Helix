@@ -12,17 +12,8 @@ from playwright.sync_api import sync_playwright
 import requests
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
-try:
-    import modal
-except ImportError:
-    modal = None
-try:
-    import firebase_admin
-    from firebase_admin import credentials, db
-except ImportError:
-    firebase_admin = None
 
 #-----------------------CONFIGURATION & LOGGING-----------------------#
 # Configure logging
@@ -48,25 +39,35 @@ CONFIG = {
 }
 
 # Variables & Constants
-global event_count
-event_count = 0
 last_scrape_stats: Dict[str, Dict[str, Any]] = {}
 GENERAL_CALENDAR_LINKS = [
-    "https://calendars.illinois.edu/list/7",
-    "https://calendars.illinois.edu/list/557",
-    "https://calendars.illinois.edu/list/594",
-    "https://calendars.illinois.edu/list/4756",
-    "https://calendars.illinois.edu/list/596",
-    "https://calendars.illinois.edu/list/62",
-    "https://calendars.illinois.edu/list/597",
-    "https://calendars.illinois.edu/list/637",
-    "https://calendars.illinois.edu/list/4757",
-    "https://calendars.illinois.edu/list/598",
-    "https://calendars.illinois.edu/list/2568",
-    "https://calendars.illinois.edu/list/4063",
-    "https://calendars.illinois.edu/list/5510",
-    "https://calendars.illinois.edu/list/4092"
+    # Original sources
+    "https://calendars.illinois.edu/list/7",    # General Events
+    "https://calendars.illinois.edu/list/557",  # Academic Dates
+    "https://calendars.illinois.edu/list/594",  # Advising & Placement
+    "https://calendars.illinois.edu/list/4756", # Chicago-area campus events
+    "https://calendars.illinois.edu/list/596",  # Cultural & International
+    "https://calendars.illinois.edu/list/62",   # Exhibits
+    "https://calendars.illinois.edu/list/597",  # Performances
+    "https://calendars.illinois.edu/list/637",  # Recreation, Health & Wellness
+    "https://calendars.illinois.edu/list/4757", # Research Calendar (OVCRI)
+    "https://calendars.illinois.edu/list/598",  # Speakers
+    "https://calendars.illinois.edu/list/2568", # Grainger College of Engineering
+    "https://calendars.illinois.edu/list/4063", # Illini Union All Events
+    "https://calendars.illinois.edu/list/5510", # IASL Campus Events
+    "https://calendars.illinois.edu/list/4092", # Library Calendar
+    # Additional sources discovered via ID scan
+    "https://calendars.illinois.edu/list/33",   # Krannert Center
+    "https://calendars.illinois.edu/list/44",   # McKinley Health Center
+    "https://calendars.illinois.edu/list/45",   # Center for Global Studies
+    "https://calendars.illinois.edu/list/59",   # Department of Economics
+    "https://calendars.illinois.edu/list/60",   # University Housing
+    "https://calendars.illinois.edu/list/75",   # Saturday Physics for Everyone
+    "https://calendars.illinois.edu/list/79",   # Materials Research Laboratory
+    "https://calendars.illinois.edu/list/25",   # Center for Advanced Study
 ]
+KCPA_CALENDAR_LINK = "https://krannertcenter.com/calendar"
+KAM_EVENTS_LINK    = "https://kam.illinois.edu/exhibitions-events/events"
 STATE_FARM_CENTER_CALENDAR_LINK = "https://www.statefarmcenter.com/events/all"
 ATHLETIC_TICKET_LINKS = [
     "https://fightingillini.com/sports/football/schedule",
@@ -152,59 +153,60 @@ def validate_event(event: Dict[str, Any]) -> bool:
             return False
     
     return True
-def parse_month_to_number(month_str):
-    try:
-        return datetime.strptime(month_str, "%B").month
-    except ValueError:
-        return datetime.strptime(month_str, "%b").month
+def parse_month_to_number(month_str: str) -> int:
+    """Return 1-12 for a month name or abbreviation; returns 1 on unrecognised input."""
+    month_str = month_str.strip()
+    for fmt in ("%B", "%b"):
+        try:
+            return datetime.strptime(month_str, fmt).month
+        except ValueError:
+            continue
+    logger.warning("Unrecognised month string: %r — defaulting to 1", month_str)
+    return 1
 
 def detect_free_food(event_info):
-    """Check if event mentions free food or is at a food-likely location."""
+    """Append 'Free Food 🍕' tag when event mentions food; does not overwrite existing tags."""
     FREE_FOOD_KEYWORDS = [
-        # Single high-confidence words
         "pizza", "lunch", "dinner", "breakfast", "brunch", "snacks", "refreshments",
         "cookies", "donuts", "bagels", "coffee", "meal", "food",
-        # Explicit free food mentions
         "free food", "free pizza", "free lunch", "free dinner", "free breakfast",
-        "lunch provided", "dinner provided", "food will be served", 
+        "lunch provided", "dinner provided", "food will be served",
         "snacks provided", "free snacks", "complimentary food", "free meal",
-        # Common college food event patterns
         "pizza party", "food included", "lunch included", "dinner included",
         "continental breakfast", "catered", "potluck", "bbq", "cookout",
-        "reception with food", "cookies and", "donuts", "bagels", "coffee and",
-        # Social/mixer events often have food
+        "reception with food", "light refreshments", "food and drinks",
         "social hour", "networking lunch", "luncheon", "banquet", "mixer",
-        "tailgate", "picnic", "fest", "supper", "banquet", "buffet",
-        # Workshop/info session food
-        "lunch will be provided", "refreshments will be", "light refreshments",
-        "food and drinks"
-    ]
-    
-    # Location tags that often mean food (UIUC/Champaign specific)
-    FOOD_LOCATIONS = [
-        "Dining Hall", "Restaurant", "Cafe", "Kitchen", "Union Basement", 
-        "Coffee Shop", "Bakery", "Grill", "Pub", "Tavern", "Snack Bar"
+        "tailgate", "picnic", "buffet",
     ]
 
-    text_to_check = (
-        (event_info.get("summary", "") + " " + event_info.get("description", "") + " " + event_info.get("location", ""))
-        .lower()
-    )
-    
-    # Check keywords
+    FOOD_LOCATIONS = [
+        "dining hall", "restaurant", "cafe", "kitchen", "union basement",
+        "coffee shop", "bakery", "grill", "pub", "tavern", "snack bar",
+    ]
+
+    text_to_check = " ".join([
+        event_info.get("summary", ""),
+        event_info.get("description", ""),
+        event_info.get("location", ""),
+    ]).lower()
+
+    def _tag_food():
+        existing = event_info.get("tag", "")
+        if "Free Food" not in existing:
+            event_info["tag"] = (existing + ", Free Food 🍕").lstrip(", ") if existing else "Free Food 🍕"
+
     for keyword in FREE_FOOD_KEYWORDS:
         if keyword in text_to_check:
-            event_info["tag"] = "Free Food 🍕"
+            _tag_food()
             return event_info
-            
-    # Check locations if summary implies a social event
+
     summary_lower = event_info.get("summary", "").lower()
     if any(k in summary_lower for k in ["social", "meeting", "workshop", "information", "gathering"]):
         for loc in FOOD_LOCATIONS:
-            if loc.lower() in text_to_check:
-                event_info["tag"] = "Free Food 🍕"
+            if loc in text_to_check:
+                _tag_food()
                 return event_info
-                
+
     return event_info
 
 def cap_events(events: Dict[Any, Dict[str, Any]], max_events: int) -> Dict[Any, Dict[str, Any]]:
@@ -225,9 +227,10 @@ def cap_events(events: Dict[Any, Dict[str, Any]], max_events: int) -> Dict[Any, 
 # Individual Scrapers
 def scrape_general() -> Dict[str, Any]:
     """Scrape general university calendars with enhanced error handling."""
-    global event_count
     session = create_robust_session()
-    events = {}
+    events: Dict[int, Any] = {}
+    seen_links: set = set()   # deduplicate across calendar pages
+    local_count = 0
     successful_calendars = 0
     failed_calendars = 0
     
@@ -298,6 +301,11 @@ def scrape_general() -> Dict[str, Any]:
                                     event_info["htmlLink"] = "https://calendars.illinois.edu" + raw_href
                                 else:
                                     event_info["htmlLink"] = raw_href
+
+                                # Skip duplicate events seen on another calendar page
+                                if event_info["htmlLink"] in seen_links:
+                                    continue
+                                seen_links.add(event_info["htmlLink"])
                                     
                                 # Meta: Time and Location
                                 meta = entry.find("div", class_="event-meta")
@@ -320,62 +328,52 @@ def scrape_general() -> Dict[str, Any]:
                                 start_dt = None
                                 end_dt = None
                                 
+                                TZ = ZoneInfo("America/Chicago")
+                                y, mo, d = current_date_obj.year, current_date_obj.month, current_date_obj.day
+
                                 # Handle "All Day"
                                 if "All Day" in time_str:
-                                    start_dt = current_date_obj.replace(hour=0, minute=0, second=0, microsecond=0)
-                                    end_dt = current_date_obj.replace(hour=23, minute=59, second=59, microsecond=0)
+                                    start_dt = datetime(y, mo, d, 0, 0, tzinfo=TZ)
+                                    end_dt   = datetime(y, mo, d, 23, 59, tzinfo=TZ)
                                 else:
-                                    # Handle time range: "9:00 am - 12:00 pm" or "9:00 am"
-                                    # Normalize string
-                                    original_time_str = time_str
-                                    time_str = time_str.replace(".", "").lower() # 9:00 a.m. -> 9:00 am
-                                    
-                                    # Regex for range
-                                    range_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)", time_str)
+                                    time_str = time_str.replace(".", "").lower()
+
+                                    range_match = re.search(
+                                        r"(\d{1,2}):(\d{2})\s*(am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)",
+                                        time_str,
+                                    )
                                     if range_match:
                                         sh, sm, s_mer, eh, em, e_mer = range_match.groups()
                                         sh, sm, eh, em = int(sh), int(sm), int(eh), int(em)
-                                        
-                                        if not s_mer: s_mer = e_mer # Inherit suffix if missing
-                                        
+                                        if not s_mer:
+                                            s_mer = e_mer
                                         if s_mer == "pm" and sh != 12: sh += 12
                                         elif s_mer == "am" and sh == 12: sh = 0
-                                        
                                         if e_mer == "pm" and eh != 12: eh += 12
                                         elif e_mer == "am" and eh == 12: eh = 0
-                                        
-                                        start_dt = current_date_obj.replace(hour=sh, minute=sm)
-                                        end_dt = current_date_obj.replace(hour=eh, minute=em)
-                                        
+                                        start_dt = datetime(y, mo, d, sh, sm, tzinfo=TZ)
+                                        end_dt   = datetime(y, mo, d, eh, em, tzinfo=TZ)
                                     else:
-                                        # Single time
                                         single_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", time_str)
                                         if single_match:
                                             sh, sm, s_mer = single_match.groups()
                                             sh, sm = int(sh), int(sm)
                                             if s_mer == "pm" and sh != 12: sh += 12
                                             elif s_mer == "am" and sh == 12: sh = 0
-                                            
-                                            start_dt = current_date_obj.replace(hour=sh, minute=sm)
-                                            # Default 1 hour duration
-                                            end_dt = start_dt + timedelta(hours=1)
-                                
-                                if start_dt:
-                                    event_info["start"] = start_dt.replace(tzinfo=ZoneInfo("America/Chicago")).isoformat()
-                                else:
-                                    # Fallback
-                                    event_info["start"] = current_date_obj.replace(tzinfo=ZoneInfo("America/Chicago")).isoformat()
-                                    
-                                if end_dt:
-                                    event_info["end"] = end_dt.replace(tzinfo=ZoneInfo("America/Chicago")).isoformat()
-                                else:
-                                    event_info["end"] = ""
+                                            start_dt = datetime(y, mo, d, sh, sm, tzinfo=TZ)
+                                            end_dt   = start_dt + timedelta(hours=1)
+                                        else:
+                                            start_dt = datetime(y, mo, d, 0, 0, tzinfo=TZ)
+                                            end_dt   = None
+
+                                event_info["start"] = start_dt.isoformat()
+                                event_info["end"]   = end_dt.isoformat() if end_dt else ""
 
                                 # Validate and add event
                                 if validate_event(event_info):
                                     event_info = detect_free_food(event_info)
-                                    events[event_count] = event_info
-                                    event_count += 1
+                                    events[local_count] = event_info
+                                    local_count += 1
                                     calendar_events += 1
                                 
                             except Exception as e:
@@ -409,19 +407,18 @@ def scrape_general() -> Dict[str, Any]:
     logger.info(f"General scraping complete: {successful_calendars} successful, {failed_calendars} failed calendars")
     return events
 
+_STATEFARM_ALLOWED_HOST = "www.statefarmcenter.com"
+
 def scrape_state_farm():
-    global event_count
-    events = {}
+    events: Dict[int, Any] = {}
+    local_count = 0
     print("\n🔍 Scraping State Farm Center...")
     print(f"   Link: {STATE_FARM_CENTER_CALENDAR_LINK}")
     try:
-        # Use requests for the initial list as it proved more reliable in tests
-        session = requests.Session()
-        session.headers.update({"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
-        
-        response = session.get(STATE_FARM_CENTER_CALENDAR_LINK, timeout=20)
-        if response.status_code != 200:
-            print(f"   ❌ Failed to fetch State Farm Center main page: {response.status_code}")
+        session = create_robust_session()
+        response = safe_request(STATE_FARM_CENTER_CALENDAR_LINK, session)
+        if not response:
+            print("   ❌ Failed to fetch State Farm Center main page")
             return events
 
         soup = BeautifulSoup(response.text, "lxml")
@@ -443,6 +440,10 @@ def scrape_state_farm():
                         continue
                     if not event_link.startswith("http"):
                         event_link = urljoin("https://www.statefarmcenter.com/", event_link)
+                    # SSRF guard: only follow links on the expected host
+                    if urlparse(event_link).netloc != _STATEFARM_ALLOWED_HOST:
+                        logger.warning("Skipping off-domain URL: %s", event_link)
+                        continue
                     seen_urls.add(event_link)
 
                     print(f"   [{i+1}/{len(event_listings)}] Detail: {event_link}")
@@ -503,8 +504,10 @@ def scrape_state_farm():
 
                     event_info = {k: (v.strip() if isinstance(v, str) else v) for k, v in event_info.items()}
                     event_info = detect_free_food(event_info)
-                    events[event_count] = event_info
-                    event_count += 1
+                    if not validate_event(event_info):
+                        continue
+                    events[local_count] = event_info
+                    local_count += 1
 
                 except Exception as e:
                     print(f"      ⚠️  Error processing {event_link}: {e}")
@@ -516,18 +519,17 @@ def scrape_state_farm():
     return events
 
 def scrape_athletics():
-    global event_count
-    session = requests.Session()
-    session.headers.update({"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
-    events = {}
+    session = create_robust_session()
+    events: Dict[int, Any] = {}
+    local_count = 0
 
     print("\n🔍 Scraping Athletics Schedules...")
     for calendar_link in ATHLETIC_TICKET_LINKS:
         try:
             print(f"   Scraping {calendar_link}...")
-            response = session.get(calendar_link, timeout=20)
-            if response.status_code != 200:
-                print(f"   ❌ Failed to fetch {calendar_link}: {response.status_code}")
+            response = safe_request(calendar_link, session)
+            if not response:
+                print(f"   ❌ Failed to fetch {calendar_link}")
                 continue
             
             soup = BeautifulSoup(response.text, "lxml")
@@ -570,9 +572,10 @@ def scrape_athletics():
                                 month = date_match.group(1)
                                 day = int(date_match.group(2))
                                 month_num = parse_month_to_number(month)
-                                
-                                current_month = datetime.now().month
-                                current_year = datetime.now().year
+
+                                _now = datetime.now()
+                                current_month = _now.month
+                                current_year = _now.year
                                 # Simple school year wrap-around logic
                                 if current_month >= 8 and month_num < 8:
                                     year = current_year + 1
@@ -602,8 +605,10 @@ def scrape_athletics():
                     loc_div = listing.find("div", class_="sidearm-schedule-game-location")
                     if loc_div:
                         loc_spans = loc_div.find_all("span")
-                        if loc_spans:
-                            event_info["location"] = f"{loc_spans[1].text.strip()}, {loc_spans[0].text.strip()}" if len(loc_spans) > 1 else loc_spans[0].text.strip()
+                        if len(loc_spans) >= 2:
+                            event_info["location"] = f"{loc_spans[1].text.strip()}, {loc_spans[0].text.strip()}"
+                        elif len(loc_spans) == 1:
+                            event_info["location"] = loc_spans[0].text.strip()
                         else:
                             event_info["location"] = "Champaign, Ill."
                     else:
@@ -611,8 +616,10 @@ def scrape_athletics():
 
                     event_info = {k: (v.strip() if isinstance(v, str) else v) for k, v in event_info.items()}
                     event_info = detect_free_food(event_info)
-                    events[event_count] = event_info
-                    event_count += 1
+                    if not validate_event(event_info):
+                        continue
+                    events[local_count] = event_info
+                    local_count += 1
                 except Exception as e:
                     print(f"      ⚠️  Error parsing game {i+1}: {e}")
                     continue
@@ -621,10 +628,212 @@ def scrape_athletics():
             print(f"   ❌ Error scraping {calendar_link}: {e}")
     return events
 
+def scrape_kcpa() -> Dict[str, Any]:
+    """Scrape Krannert Center for the Performing Arts calendar.
+
+    List page: https://krannertcenter.com/calendar
+    Structure: <div class="views-row"> contains title link + date
+    Detail page provides time and venue.
+    """
+    events: Dict[int, Any] = {}
+    local_count = 0
+    session = create_robust_session()
+    TZ = ZoneInfo("America/Chicago")
+
+    print("\n🔍 Scraping Krannert Center for the Performing Arts...")
+    try:
+        response = safe_request(KCPA_CALENDAR_LINK, session)
+        if not response:
+            print("   ❌ Failed to fetch KCPA calendar page")
+            return events
+
+        soup = BeautifulSoup(response.text, "lxml")
+        rows = soup.find_all(class_="views-row")
+        print(f"   Found {len(rows)} event rows")
+
+        for row in rows:
+            try:
+                link_el = row.find("a")
+                if not link_el:
+                    continue
+                href = link_el.get("href", "")
+                if not href:
+                    continue
+                event_url = href if href.startswith("http") else "https://krannertcenter.com" + href
+
+                # Parse date from list row — "JUL 16, 2026" or "Th Jul 16, 2026 - 5:30pm CT"
+                date_el = row.find(class_=lambda c: c and "date" in (c if isinstance(c, str) else " ".join(c)).lower())
+                list_date_text = date_el.get_text(strip=True) if date_el else row.get_text(" ", strip=True)
+
+                # Fetch detail page for time + venue + description
+                detail_resp = safe_request(event_url, session)
+                if not detail_resp:
+                    continue
+                detail = BeautifulSoup(detail_resp.text, "lxml")
+
+                summary = (detail.find("h1") or link_el).get_text(strip=True)
+
+                # Description
+                body_el = detail.find(class_=lambda c: c and "body" in (c if isinstance(c, str) else " ".join(c)).lower())
+                description = body_el.get_text(" ", strip=True)[:500] if body_el else ""
+
+                # Venue from field--name-field-display-venue
+                venue_el = detail.find(class_=lambda c: c and "field-display-venue" in " ".join(c if isinstance(c, list) else [c]))
+                venue = venue_el.get_text(strip=True) if venue_el else "Krannert Center for the Performing Arts"
+                location = f"{venue}, Krannert Center, 500 S Goodwin Ave, Urbana, IL 61801"
+
+                # Price / tag
+                price_el = detail.find(class_=lambda c: c and "ticket-prices" in " ".join(c if isinstance(c, list) else [c]))
+                price_text = (price_el.get_text(strip=True) if price_el else "").lower()
+                tag = "Free Food 🍕" if "free" in price_text else "Performances"
+
+                # Date + time from detail event-date: "Th Jul 16, 2026 - 5:30pm CT"
+                event_date_el = detail.find(class_=lambda c: c and "event-date" in (c if isinstance(c, str) else " ".join(c)))
+                event_date_text = event_date_el.get_text(strip=True) if event_date_el else list_date_text
+
+                # Parse "Th Jul 16, 2026 - 5:30pm CT" or "JUL 16, 2026"
+                date_match = re.search(
+                    r"(?:\w{2,3}\s+)?(\w+)\s+(\d{1,2}),?\s+(\d{4})",
+                    event_date_text, re.IGNORECASE,
+                )
+                time_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", event_date_text, re.IGNORECASE)
+
+                if not date_match:
+                    logger.warning("KCPA: could not parse date from %r", event_date_text)
+                    continue
+
+                month_str, day_str, year_str = date_match.groups()
+                month_num = parse_month_to_number(month_str)
+                day, year = int(day_str), int(year_str)
+
+                if time_match:
+                    h, m, mer = time_match.groups()
+                    h, m = int(h), int(m)
+                    if mer.lower() == "pm" and h != 12: h += 12
+                    elif mer.lower() == "am" and h == 12: h = 0
+                    start_dt = datetime(year, month_num, day, h, m, tzinfo=TZ)
+                else:
+                    start_dt = datetime(year, month_num, day, 19, 0, tzinfo=TZ)  # default 7 PM
+
+                end_dt = start_dt + timedelta(hours=2)
+
+                event_info = {
+                    "summary": summary,
+                    "description": description,
+                    "location": location,
+                    "tag": tag,
+                    "htmlLink": event_url,
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                }
+                event_info = detect_free_food(event_info)
+                if validate_event(event_info):
+                    events[local_count] = event_info
+                    local_count += 1
+
+            except Exception as e:
+                logger.error("KCPA: error parsing event row: %s", e)
+                continue
+
+    except Exception as e:
+        print(f"   ❌ Error in scrape_kcpa: {e}")
+
+    print(f"   ✅ KCPA: {local_count} events scraped")
+    return events
+
+
+def scrape_kam() -> Dict[str, Any]:
+    """Scrape Krannert Art Museum events.
+
+    List page: https://kam.illinois.edu/exhibitions-events/events
+    Structure: <div class="views-row"> contains title link + date range.
+    KAM events are exhibitions/programs, not single-time events,
+    so we use the exhibition start date as start and end date as end.
+    """
+    events: Dict[int, Any] = {}
+    local_count = 0
+    session = create_robust_session()
+    TZ = ZoneInfo("America/Chicago")
+
+    print("\n🔍 Scraping Krannert Art Museum...")
+    try:
+        response = safe_request(KAM_EVENTS_LINK, session)
+        if not response:
+            print("   ❌ Failed to fetch KAM events page")
+            return events
+
+        soup = BeautifulSoup(response.text, "lxml")
+        rows = soup.find_all(class_="views-row")
+        print(f"   Found {len(rows)} KAM event rows")
+
+        for row in rows:
+            try:
+                link_el = row.find("a")
+                if not link_el:
+                    continue
+                href = link_el.get("href", "")
+                event_url = href if href.startswith("http") else "https://kam.illinois.edu" + href
+                summary = link_el.get_text(strip=True)
+
+                # Row text: "Jun 23, 10 am–Jul 2, 5 pm Title"
+                row_text = row.get_text(" ", strip=True)
+
+                # Parse first date from range: "Jun 23, 10 am" or "Jun 23"
+                date_match = re.search(
+                    r"(\w+)\s+(\d{1,2})(?:,\s*\d{1,2}(?::\d{2})?\s*(?:am|pm))?",
+                    row_text, re.IGNORECASE,
+                )
+                end_date_match = re.search(
+                    r"[–\-]\s*(\w+)\s+(\d{1,2})(?:,\s*\d{1,2}(?::\d{2})?\s*(?:am|pm))?",
+                    row_text, re.IGNORECASE,
+                )
+
+                if not date_match:
+                    continue
+
+                now = datetime.now(tz=TZ)
+                start_month = parse_month_to_number(date_match.group(1))
+                start_day = int(date_match.group(2))
+                # Guess year: if month < current month, it's next year
+                start_year = now.year if start_month >= now.month else now.year + 1
+                start_dt = datetime(start_year, start_month, start_day, 10, 0, tzinfo=TZ)
+
+                if end_date_match:
+                    end_month = parse_month_to_number(end_date_match.group(1))
+                    end_day = int(end_date_match.group(2))
+                    end_year = start_year if end_month >= start_month else start_year + 1
+                    end_dt = datetime(end_year, end_month, end_day, 17, 0, tzinfo=TZ)
+                else:
+                    end_dt = start_dt + timedelta(hours=4)
+
+                event_info = {
+                    "summary": summary,
+                    "description": f"Exhibition/program at Krannert Art Museum. See {event_url} for details.",
+                    "location": "Krannert Art Museum, 500 E Peabody Dr, Champaign, IL 61820",
+                    "tag": "Arts",
+                    "htmlLink": event_url,
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                }
+                event_info = detect_free_food(event_info)
+                if validate_event(event_info):
+                    events[local_count] = event_info
+                    local_count += 1
+
+            except Exception as e:
+                logger.error("KAM: error parsing event row: %s", e)
+                continue
+
+    except Exception as e:
+        print(f"   ❌ Error in scrape_kam: {e}")
+
+    print(f"   ✅ KAM: {local_count} events scraped")
+    return events
+
+
 # Scrape All Function
 def scrape():
-    global event_count, last_scrape_stats
-    event_count = 0
+    global last_scrape_stats
     combined_json_data = {}
     last_scrape_stats = {}
     max_events_per_source = CONFIG.get("max_events_per_source", 2000)
@@ -633,6 +842,8 @@ def scrape():
         ("state_farm", scrape_state_farm),
         ("athletics", scrape_athletics),
         ("general", scrape_general),
+        ("kcpa", scrape_kcpa),
+        ("kam", scrape_kam),
     ]:
         source_events = {}
         try:
@@ -654,39 +865,6 @@ def scrape():
     logger.info("Total merged events: %s", len(combined_json_data))
 
     return combined_json_data
-#-----------------------AUTO SCRAPE (Modal)-----------------------#
-if modal is not None and firebase_admin is not None:
-    app = modal.App("daily-scraper")
-    image = (
-        modal.Image.debian_slim()
-        .pip_install("Flask", "beautifulsoup4", "lxml", "playwright", "requests", "firebase_admin")
-        .run_commands("playwright install --with-deps chromium")
-    )
-
-    @app.function(
-        schedule=modal.Cron("0 9 * * *"),
-        image=image,
-        secrets=[modal.Secret.from_name("firebase-creds")],
-    )
-    def run_scraper():
-        if not firebase_admin._apps:
-            cred_dict = json.loads(os.environ["FIREBASE_CREDENTIALS"])
-            cred = credentials.Certificate(cred_dict)
-            firebase_admin.initialize_app(cred, {
-                "databaseURL": os.environ.get("FIREBASE_DATABASE_URL", "https://eventflowdatabase-default-rtdb.firebaseio.com"),
-            })
-        ref = db.reference("scraped_events")
-        scraped_data = scrape()
-        source_event_total = sum(stat.get("events", 0) for stat in last_scrape_stats.values())
-        if source_event_total == 0:
-            raise RuntimeError("All sources returned zero events. Aborting write to Firebase.")
-        ref.set(scraped_data)
-        print(f"Scraper completed! Saved {len(scraped_data)} events to Firebase.")
-
-    @app.local_entrypoint()
-    def test():
-        run_scraper.remote()
-
 def main():
     print("Scraping events...")
     data = scrape()

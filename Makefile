@@ -10,9 +10,12 @@ help:
 	@echo "  make help         - Show this help message"
 
 install:
-	cd Project && pip install -r requirements.txt && playwright install chromium
+	cd Project && pip install -r requirements.txt && playwright install --with-deps chromium
 
-test validate:
+test:
+	python3 -m unittest discover -s tests -v
+
+validate:
 	cd Project && python3 -m py_compile scrape.py && echo "Python syntax validation passed"
 
 scrape-local:

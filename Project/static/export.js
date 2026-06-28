@@ -7,7 +7,7 @@
  */
 function exportToICal(events) {
   if (!events || events.length === 0) {
-    showToast('No Events', 'No events available to export', 'warning');
+    _exportShowToast('No Events', 'No events available to export', 'warning');
     return;
   }
 
@@ -33,7 +33,7 @@ function exportToICal(events) {
 
   // Create and download the file
   downloadFile(icalContent, 'uiuc-events.ics', 'text/calendar');
-  showToast('Export Complete', `Exported ${events.length} event${events.length !== 1 ? 's' : ''} to iCal format`, 'success');
+  _exportShowToast('Export Complete', `Exported ${events.length} event${events.length !== 1 ? 's' : ''} to iCal format`, 'success');
 }
 
 /**
@@ -42,36 +42,34 @@ function exportToICal(events) {
  * @returns {string} iCal formatted event
  */
 function createICalEvent(event) {
-  // Generate unique ID
-  const uid = `${event.id || generateUID()}@projecthelix.uiuc`;
-
-  // Format dates to iCal format (YYYYMMDDTHHmmssZ)
   const dtstart = formatICalDate(event.start);
-  const dtend = formatICalDate(event.end);
   const dtstamp = formatICalDate(new Date().toISOString());
 
-  // Escape special characters in text fields
-  const summary = escapeICalText(event.summary || 'Untitled Event');
-  const description = escapeICalText(event.description || '');
-  const location = escapeICalText(event.location || '');
-  const url = event.htmlLink || '';
+  // Skip events with no valid start date
+  if (!dtstart || !dtstamp) return '';
 
-  return [
+  const dtend = formatICalDate(event.end) || dtstart;
+  const uid = `${event.id || generateUID()}@projecthelix.uiuc`;
+
+  const lines = [
     'BEGIN:VEVENT',
     `UID:${uid}`,
     `DTSTAMP:${dtstamp}`,
     `DTSTART:${dtstart}`,
     `DTEND:${dtend}`,
-    `SUMMARY:${summary}`,
-    description ? `DESCRIPTION:${description}` : '',
-    location ? `LOCATION:${location}` : '',
-    url ? `URL:${url}` : '',
-    event.tag ? `CATEGORIES:${event.tag}` : '',
-    'STATUS:CONFIRMED',
-    'SEQUENCE:0',
-    'END:VEVENT',
-    ''
-  ].filter(line => line !== '').join('\r\n');
+    `SUMMARY:${escapeICalText(event.summary || 'Untitled Event')}`,
+  ];
+
+  const description = escapeICalText(event.description || '');
+  const location = escapeICalText(event.location || '');
+  const url = event.htmlLink || '';
+  if (description) lines.push(`DESCRIPTION:${description}`);
+  if (location) lines.push(`LOCATION:${location}`);
+  if (url) lines.push(`URL:${url}`);
+  if (event.tag) lines.push(`CATEGORIES:${escapeICalText(event.tag)}`);
+  lines.push('STATUS:CONFIRMED', 'SEQUENCE:0', 'END:VEVENT', '');
+
+  return lines.map(foldICalLine).join('\r\n');
 }
 
 /**
@@ -80,9 +78,11 @@ function createICalEvent(event) {
  * @returns {string} iCal formatted date
  */
 function formatICalDate(isoDate) {
-  if (!isoDate) return '';
+  if (!isoDate) return null;
 
   const date = new Date(isoDate);
+  if (isNaN(date.getTime())) return null;
+
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const day = String(date.getUTCDate()).padStart(2, '0');
@@ -91,6 +91,20 @@ function formatICalDate(isoDate) {
   const seconds = String(date.getUTCSeconds()).padStart(2, '0');
 
   return `${year}${month}${day}T${hours}${minutes}${seconds}Z`;
+}
+
+// Fold iCal property lines at 75 octets per RFC 5545
+function foldICalLine(line) {
+  const bytes = new TextEncoder().encode(line);
+  if (bytes.length <= 75) return line;
+  const parts = [];
+  let start = 0;
+  while (start < bytes.length) {
+    const end = start === 0 ? 75 : start + 74;
+    parts.push(new TextDecoder().decode(bytes.slice(start, end)));
+    start = end;
+  }
+  return parts.join('\r\n ');
 }
 
 /**
@@ -122,7 +136,7 @@ function generateUID() {
  */
 function exportToCSV(events) {
   if (!events || events.length === 0) {
-    showToast('No Events', 'No events available to export', 'warning');
+    _exportShowToast('No Events', 'No events available to export', 'warning');
     return;
   }
 
@@ -154,15 +168,15 @@ function exportToCSV(events) {
     ];
   });
 
-  // Combine headers and rows
+  // Combine headers and rows — RFC 4180 requires CRLF
   const csvContent = [
     headers.join(','),
     ...rows.map(row => row.join(','))
-  ].join('\n');
+  ].join('\r\n');
 
   // Create and download the file
   downloadFile(csvContent, 'uiuc-events.csv', 'text/csv');
-  showToast('Export Complete', `Exported ${events.length} event${events.length !== 1 ? 's' : ''} to CSV format`, 'success');
+  _exportShowToast('Export Complete', `Exported ${events.length} event${events.length !== 1 ? 's' : ''} to CSV format`, 'success');
 }
 
 /**
@@ -204,8 +218,8 @@ function downloadFile(content, filename, mimeType) {
   URL.revokeObjectURL(url);
 }
 
-// Make showToast available (will be defined in script.js)
-function showToast(title, message, type, duration) {
+// Use the global showToast defined in script.js; fall back to console if not yet loaded
+function _exportShowToast(title, message, type, duration) {
   if (window.showToast) {
     window.showToast(title, message, type, duration);
   } else {

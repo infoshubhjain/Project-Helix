@@ -152,25 +152,25 @@ document.addEventListener('DOMContentLoaded', function() {
         card.innerHTML = `
             <div class="parsed-event-header">
                 <div class="parsed-event-title">${escapeHtml(event.title)}</div>
-                <div class="parsed-event-confidence confidence-${confidenceClass}\">
+                <div class="parsed-event-confidence confidence-${confidenceClass}">
                     ${confidenceText} Confidence
                 </div>
             </div>
             <div class="parsed-event-details">
                 <div class="parsed-event-datetime">
-                    <span class=\"event-icon\">📅</span>
+                    <span class="event-icon">📅</span>
                     <span>${dateStr}</span>
-                    <span class=\"event-icon\">🕐</span>
+                    <span class="event-icon">🕐</span>
                     <span>${startTimeStr} - ${endTimeStr}</span>
                 </div>
                 ${event.location ? `
-                    <div class=\"parsed-event-location\">
-                        <span class=\"event-icon\">📍</span>
+                    <div class="parsed-event-location">
+                        <span class="event-icon">📍</span>
                         <span>${escapeHtml(event.location)}</span>
                     </div>
                 ` : ''}
                 <div class="parsed-event-description">
-                    <span class=\"event-icon\">📝</span>
+                    <span class="event-icon">📝</span>
                     <span>${escapeHtml(event.description)}</span>
                 </div>
             </div>

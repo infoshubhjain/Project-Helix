@@ -4,13 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Project Helix | Illinois</title>
+  <!-- Content-Security-Policy: restrict script/style sources to known trusted origins -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net;
+                 style-src 'self' 'unsafe-inline';
+                 frame-src https://calendar.google.com;
+                 connect-src 'self' https://www.googleapis.com https://calendar.google.com;
+                 img-src 'self' data: https:;">
   <link rel="stylesheet" href="Project/static/style.css">
   <link rel="icon" type="image/png" href="Project/static/images/favicon.png">
   <!-- Google API Libraries -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://apis.google.com/js/api.js" async defer></script>
-  <!-- Fuse.js for fuzzy search -->
-  <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0"></script>
+  <!-- Fuse.js for fuzzy search (SRI hash ensures CDN integrity) -->
+  <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0"
+          integrity="sha384-PCSoOZTpbkikBEtd/+uV3WNdc676i9KUf01KOA8CnJotvlx8rRrETbDuwdjqTYvt"
+          crossorigin="anonymous"></script>
 </head>
 <body>
   <div class="container">
@@ -262,11 +272,24 @@
     </div>
   </div>
 
-  <!-- Configuration Script - YOUR CREDENTIALS -->
+  <!--
+    SETUP: Google Calendar credentials
+    ─────────────────────────────────────────────────────────────────────────────
+    1. Go to https://console.cloud.google.com/ → APIs & Services → Credentials
+    2. Create an API Key and restrict it to:
+         - HTTP referrers: your GitHub Pages domain  (e.g. https://youruser.github.io/*)
+         - API restriction: Google Calendar API v3 only
+    3. Create an OAuth 2.0 Client ID (Web application) and add your Pages URL as
+       an authorised JavaScript origin.
+    4. Replace the two placeholder values below with your restricted credentials.
+    ─────────────────────────────────────────────────────────────────────────────
+    NEVER commit real credentials to a public repository.
+    If you have already done so, rotate them immediately in Google Cloud Console.
+    ─────────────────────────────────────────────────────────────────────────────
+  -->
   <script>
-    // Your Google API credentials from credentials.json
-    const GOOGLE_CLIENT_ID = '691968245686-5cdnqs5inasr62td91id893m70lg3k09.apps.googleusercontent.com';
-    const GOOGLE_API_KEY = 'AIzaSyD3ZFca0_TgjnstevpbHfo1BNtEWtwlAO4';
+    const GOOGLE_CLIENT_ID = 'YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com';
+    const GOOGLE_API_KEY   = 'YOUR_RESTRICTED_API_KEY';
   </script>
 
   <!-- Toast Notification Container -->

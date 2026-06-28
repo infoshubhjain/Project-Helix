@@ -31,8 +31,17 @@ document.addEventListener("DOMContentLoaded", function () {
   let hasMoreEvents = true; // Track if more events available
   let totalEventsFound = 0; // Total events matching current filter
 
-  // Intersection Observer for infinite scroll
-  let intersectionObserver = null;
+  // Intersection Observer for infinite scroll — created once, never recreated per filter
+  const intersectionObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting && !isLoading && hasMoreEvents) {
+          loadMoreEvents();
+        }
+      });
+    },
+    { root: null, rootMargin: '100px', threshold: 0.1 }
+  );
 
   // Fuse.js instance for fuzzy search
   let fuse = null;
@@ -64,24 +73,6 @@ document.addEventListener("DOMContentLoaded", function () {
       <p>Loading more events...</p>
     `;
     return spinner;
-  }
-
-  function setupIntersectionObserver() {
-    // Create intersection observer for infinite scroll
-    intersectionObserver = new IntersectionObserver(
-      (entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting && !isLoading && hasMoreEvents) {
-            loadMoreEvents();
-          }
-        });
-      },
-      {
-        root: null,
-        rootMargin: '100px', // Start loading 100px before reaching bottom
-        threshold: 0.1
-      }
-    );
   }
 
   function observeLoadMoreTrigger() {
@@ -164,6 +155,12 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = String(str == null ? '' : str);
+    return d.innerHTML;
+  }
+
   // Map tag name to CSS class for distinct category colors (WCAG-friendly)
   function getTagClass(tag) {
     if (!tag) return 'tag-general';
@@ -190,7 +187,7 @@ document.addEventListener("DOMContentLoaded", function () {
     );
 
     // Parse ISO datetime strings (e.g., "2025-11-30T14:00:00-06:00")
-    if (event.start && event.start.includes('T')) {
+    if (event.start && typeof event.start === 'string' && event.start.includes('T')) {
       const startDate = new Date(event.start);
       event.start_date = formatDate(startDate);
       event.start_time = formatTime(startDate);
@@ -243,45 +240,23 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // ========== Sort Events by Date/Time ==========
   function sortEventsByTime() {
-    // Simple bubble sort to order events by date and time
-    for (let i = 0; i < allEvents.length; i++) {
-      for (let j = 0; j < allEvents.length - 1 - i; j++) {
-        let event1 = allEvents[j];
-        let event2 = allEvents[j + 1];
-
-        // Compare dates and times
-        let datetime1 = getEventDateTime(event1);
-        let datetime2 = getEventDateTime(event2);
-
-        // If event1 should come after event2, swap them
-        if (datetime1 > datetime2) {
-          allEvents[j] = event2;
-          allEvents[j + 1] = event1;
-        }
-      }
-    }
+    allEvents.sort((a, b) => getEventDateTime(a) - getEventDateTime(b));
   }
 
   // ========== Get Event Date/Time for Comparison ==========
   function getEventDateTime(event) {
-    // If no date, put it at the end
-    if (!event.start_date || event.start_date === 'Date TBA') {
-      return new Date('9999-12-31'); // Far future date
+    // Prefer the ISO start field set by the scraper
+    if (event.start) {
+      const d = new Date(event.start);
+      if (!isNaN(d.getTime())) return d;
     }
 
-    // Combine date and time into a full datetime string
-    let dateStr = event.start_date;
-    let timeStr = event.start_time || '00:00';
-
-    // Create a Date object for comparison
-    let datetime = new Date(dateStr + ' ' + timeStr);
-
-    // If invalid date, put at end
-    if (isNaN(datetime.getTime())) {
+    if (!event.start_date || event.start_date === 'Date TBA') {
       return new Date('9999-12-31');
     }
 
-    return datetime;
+    const datetime = new Date(event.start_date + ' ' + (event.start_time || '00:00'));
+    return isNaN(datetime.getTime()) ? new Date('9999-12-31') : datetime;
   }
 
   // ========== Check if Event is in the Past ==========
@@ -390,14 +365,14 @@ document.addEventListener("DOMContentLoaded", function () {
   }
   
   function clearAllFilters() {
-    searchInput.value = '';
-    categorySelect.value = 'all';
-    dateFilter.value = 'all';
-    locationFilter.value = 'all';
-    timeFilter.value = 'all';
-    customDateGroup.style.display = 'none';
-    startDateInput.value = '';
-    endDateInput.value = '';
+    if (searchInput) searchInput.value = '';
+    if (categorySelect) categorySelect.value = 'all';
+    if (dateFilter) dateFilter.value = 'all';
+    if (locationFilter) locationFilter.value = 'all';
+    if (timeFilter) timeFilter.value = 'all';
+    if (customDateGroup) customDateGroup.style.display = 'none';
+    if (startDateInput) startDateInput.value = '';
+    if (endDateInput) endDateInput.value = '';
     
     // Clear active filter chips
     if (activeFiltersDisplay) {
@@ -423,30 +398,35 @@ document.addEventListener("DOMContentLoaded", function () {
     if (categorySelect.value !== 'all') {
       activeFilters.push({ type: 'category', value: categorySelect.value });
     }
-    if (dateFilter.value !== 'all') {
+    if (dateFilter && dateFilter.value !== 'all') {
       if (dateFilter.value === 'custom') {
-        const start = startDateInput.value;
-        const end = endDateInput.value;
+        const start = startDateInput ? startDateInput.value : '';
+        const end = endDateInput ? endDateInput.value : '';
         activeFilters.push({ type: 'date', value: `${start} to ${end}` });
       } else {
         activeFilters.push({ type: 'date', value: dateFilter.options[dateFilter.selectedIndex].text });
       }
     }
-    if (locationFilter.value !== 'all') {
+    if (locationFilter && locationFilter.value !== 'all') {
       activeFilters.push({ type: 'location', value: locationFilter.options[locationFilter.selectedIndex].text });
     }
-    if (timeFilter.value !== 'all') {
+    if (timeFilter && timeFilter.value !== 'all') {
       activeFilters.push({ type: 'time', value: timeFilter.options[timeFilter.selectedIndex].text });
     }
     
-    // Display active filters as chips
-    if (activeFilters.length === 0) {
-      activeFiltersDisplay.innerHTML = '';
-    } else {
-      const chips = activeFilters.map(filter => 
-        `<span class="active-filter-chip">${filter.value}</span>`
-      ).join('');
-      activeFiltersDisplay.innerHTML = `<div class="active-filters-label">Active filters:</div>${chips}`;
+    // Display active filters as chips (build via DOM to avoid XSS from searchInput.value)
+    activeFiltersDisplay.innerHTML = '';
+    if (activeFilters.length > 0) {
+      const label = document.createElement('div');
+      label.className = 'active-filters-label';
+      label.textContent = 'Active filters:';
+      activeFiltersDisplay.appendChild(label);
+      activeFilters.forEach(filter => {
+        const chip = document.createElement('span');
+        chip.className = 'active-filter-chip';
+        chip.textContent = filter.value;
+        activeFiltersDisplay.appendChild(chip);
+      });
     }
   }
   
@@ -466,7 +446,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
   
   function passesDateFilter(event) {
-    const dateValue = dateFilter.value;
+    const dateValue = dateFilter ? dateFilter.value : 'all';
     if (dateValue === 'all') return true;
     
     const eventDate = getEventDateTime(event);
@@ -488,8 +468,10 @@ document.addEventListener("DOMContentLoaded", function () {
         const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
         return eventDate >= today && eventDate <= monthEnd;
       case 'custom':
+        if (!startDateInput || !endDateInput) return true;
         const startDate = new Date(startDateInput.value);
         const endDate = new Date(endDateInput.value);
+        if (isNaN(startDate) || isNaN(endDate)) return true;
         startDate.setHours(0, 0, 0, 0);
         endDate.setHours(23, 59, 59, 999);
         return eventDate >= startDate && eventDate <= endDate;
@@ -499,7 +481,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
   
   function passesLocationFilter(event) {
-    const locationValue = locationFilter.value;
+    const locationValue = locationFilter ? locationFilter.value : 'all';
     if (locationValue === 'all') return true;
     
     const location = (event.location || '').toLowerCase();
@@ -528,7 +510,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
   
   function passesTimeFilter(event) {
-    const timeValue = timeFilter.value;
+    const timeValue = timeFilter ? timeFilter.value : 'all';
     if (timeValue === 'all') return true;
     
     const eventDate = getEventDateTime(event);
@@ -563,10 +545,7 @@ document.addEventListener("DOMContentLoaded", function () {
       displayedCount = 0;
       hasMoreEvents = true;
       totalEventsFound = events.length;
-      
-      if (!append) {
-        browseContainer.innerHTML = ''; // Clear existing cards
-      }
+      browseContainer.innerHTML = '';
     }
 
     // If no events, show a message
@@ -610,11 +589,6 @@ document.addEventListener("DOMContentLoaded", function () {
     // Add or update the "Load More" button
     updateLoadMoreButton();
     
-    // Set up intersection observer for infinite scroll
-    if (hasMoreEvents && !intersectionObserver) {
-      setupIntersectionObserver();
-    }
-    
     // Observe the load more trigger
     if (hasMoreEvents) {
       observeLoadMoreTrigger();
@@ -654,9 +628,6 @@ document.addEventListener("DOMContentLoaded", function () {
     isLoading = true;
     
     try {
-      // Simulate network delay for better UX
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
       displayEvents(currentlyDisplayedEvents, true);
     } catch (error) {
       console.error('Error loading more events:', error);
@@ -674,17 +645,15 @@ document.addEventListener("DOMContentLoaded", function () {
     card.className = 'event-card-browse';
 
     let time = event.start_time;
-    if (event.start_time == "12:00 AM" && event.end_time == "11:59 PM") time = "All Day";
+    if (event.start_time === "12:00 AM" && event.end_time === "11:59 PM") time = "All Day";
 
     const tag = event.tag || 'General';
-    const tagClass = getTagClass(tag);
-    const dateStr = event.start_date || 'Date TBA';
-    const timeStr = time || 'Time TBA';
-    const locationStr = event.location || 'Location TBA';
-    const title = (event.summary || 'Untitled Event').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const descriptionPreview = buildDescriptionPreview(event)
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+    const tagClass = getTagClass(tag); // returns a fixed safe CSS class name
+    const dateStr = escapeHtml(event.start_date || 'Date TBA');
+    const timeStr = escapeHtml(time || 'Time TBA');
+    const locationStr = escapeHtml(event.location || 'Location TBA');
+    const title = escapeHtml(event.summary || 'Untitled Event');
+    const descriptionPreview = escapeHtml(buildDescriptionPreview(event));
 
     let html = '<div class="event-card-meta">';
     html += '<span>📅 ' + dateStr + '</span>';
@@ -694,7 +663,7 @@ document.addEventListener("DOMContentLoaded", function () {
     html += '<div class="event-card-info"><strong>📍</strong><span>' + locationStr + '</span></div>';
     html += '<p class="event-card-description">' + descriptionPreview + '</p>';
     html += '<div class="event-card-footer">';
-    html += '<span class="event-tag ' + tagClass + '">' + tag.replace(/</g, '&lt;') + '</span>';
+    html += '<span class="event-tag ' + tagClass + '">' + escapeHtml(tag) + '</span>';
     html += '<div class="card-actions">';
     html += '<button type="button" class="show-more-btn">Details</button>';
     html += '<button type="button" class="add-to-calendar-btn" title="Add to Google Calendar">' + syncIcon + '</button>';
@@ -715,7 +684,7 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById('detail-date').textContent = event.start_date || 'TBA';
 
     // Set time value to 'All Day' if the event lasts the whole day; else make it time listed in the event data
-    if (event.start_time == "12:00 AM" && event.end_time == "11:59 PM") {
+    if (event.start_time === "12:00 AM" && event.end_time === "11:59 PM") {
       document.getElementById('detail-time').textContent = "All Day";
     } else if (event.start_time && event.end_time) {
       document.getElementById('detail-time').textContent = `${event.start_time} - ${event.end_time}`;
@@ -753,18 +722,26 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
+    if (!event.start) {
+      showToast('No Date', 'This event has no date information and cannot be added to your calendar.', 'warning');
+      return;
+    }
+
     try {
+      const startISO = event.start;
+      const endISO = event.end || new Date(new Date(event.start).getTime() + 60 * 60 * 1000).toISOString();
+
       // Prepare event data for Google Calendar format
       const eventData = {
         summary: event.summary || 'Untitled Event',
         location: event.location || '',
         description: event.description || '',
         start: {
-          dateTime: event.start,
+          dateTime: startISO,
           timeZone: 'America/Chicago'
         },
         end: {
-          dateTime: event.end,
+          dateTime: endISO,
           timeZone: 'America/Chicago'
         }
       };

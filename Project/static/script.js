@@ -267,26 +267,3 @@ function removeToast(toast) {
   }, 300);
 }
 
-// Notification helper
-function showNotification(message, type = 'info') {
-  console.log(`[${type.toUpperCase()}] ${message}`);
-
-  // Create toast notification
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-
-  container.appendChild(toast);
-
-  // Show toast
-  setTimeout(() => toast.classList.add('show'), 10);
-
-  // Auto-hide after 4 seconds
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
-}

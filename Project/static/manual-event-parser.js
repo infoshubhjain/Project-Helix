@@ -412,14 +412,20 @@ class ManualEventParser {
     
     getMonthNumber(monthStr) {
         monthStr = monthStr.toLowerCase();
-        
+
         for (let i = 0; i < this.monthNames.length; i++) {
-            if (this.monthNames[i].startsWith(monthStr) || this.monthAbbrevs[i].startsWith(monthStr)) {
+            if (this.monthNames[i] === monthStr || this.monthAbbrevs[i] === monthStr) {
                 return i + 1;
             }
         }
-        
-        return 1; // Default to January
+
+        // Fall back: accept unambiguous prefix (input must match the start of exactly one month name)
+        const prefixMatches = this.monthNames
+            .map((name, idx) => name.startsWith(monthStr) ? idx : -1)
+            .filter(idx => idx !== -1);
+        if (prefixMatches.length === 1) return prefixMatches[0] + 1;
+
+        return 1;
     }
     
     getWeekdayNumber(weekday) {
