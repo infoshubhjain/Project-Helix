@@ -166,7 +166,17 @@
           </div>
         </div>
         <div id="filter-chips" class="filter-chips" role="tablist" aria-label="Filter by category"></div>
-        <div id="browse-events" class="browse-container"></div>
+        <div class="browse-layout">
+          <div id="browse-events" class="browse-container"></div>
+          <aside class="recurring-panel" aria-label="Recurring events">
+            <div class="recurring-header">
+              <h3>Recurring</h3>
+              <span class="recurring-count-badge" id="recurring-count">0</span>
+            </div>
+            <p class="recurring-sub">Weekly &amp; ongoing — free meals, pantries &amp; series</p>
+            <div id="recurring-list" class="recurring-list"></div>
+          </aside>
+        </div>
       </section>
     </div>
 

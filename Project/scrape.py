@@ -1506,6 +1506,20 @@ def scrape_cs() -> Dict[str, Any]:
     return events
 
 
+def scrape_food_resources() -> Dict[str, Any]:
+    """Expand the curated recurring free-food resources into upcoming dated events."""
+    print("\n🔍 Generating recurring free-food resource events...")
+    try:
+        from food_resources import generate_food_events
+        events = generate_food_events()
+        print(f"   ✅ Food resources: {len(events)} upcoming occurrences")
+        return events
+    except Exception as e:
+        print(f"   ❌ Error in scrape_food_resources: {e}")
+        logger.exception("food_resources generation failed: %s", e)
+        return {}
+
+
 # Sources that should always return events; zero means a likely outage/markup break.
 CRITICAL_SOURCES = {"general", "parkland", "urbana_library"}
 
@@ -1593,6 +1607,7 @@ def scrape():
         ("urbana_library", scrape_urbana_library),
         ("gies",       scrape_gies),
         ("cs",         scrape_cs),
+        ("food_resources", scrape_food_resources),
     ]:
         source_events = {}
         try:

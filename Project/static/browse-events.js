@@ -22,6 +22,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Store all events in a simple array
   let allEvents = [];
+  let oneTimeEvents = [];     // events shown in the main grid (non-recurring)
+  let recurringSeries = [];   // collapsed recurring series shown in the side panel
 
   // Enhanced pagination variables
   let currentlyDisplayedEvents = []; // Events that match current filter
@@ -140,17 +142,19 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       sortEventsByTime();
+      splitRecurring();      // separate recurring series from one-time events
       setupCategories();
+      renderRecurringPanel('all');
 
-      // Initialize Fuse.js for fuzzy search
-      fuse = new Fuse(allEvents, {
+      // Initialize Fuse.js for fuzzy search over the one-time (grid) events
+      fuse = new Fuse(oneTimeEvents, {
         keys: ['summary', 'description', 'location'],
         threshold: 0.4, // Lower = stricter matching
         ignoreLocation: true
       });
-      console.log('Project Helix: Fuse.js initialized with ' + allEvents.length + ' events.');
+      console.log('Project Helix: ' + oneTimeEvents.length + ' one-time events, ' + recurringSeries.length + ' recurring series.');
 
-      displayEvents(allEvents);
+      displayEvents(oneTimeEvents);
     } catch (error) {
       console.error('Error loading events:', error);
       browseContainer.innerHTML = '<p class="no-events-text">Error loading events. Please try again later.</p>';
@@ -233,6 +237,119 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Return true if event is before today
     return eventDate < today;
+  }
+
+  // ========== Recurring events ==========
+  const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  function normalizeTitle(t) {
+    return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  // Infer a human cadence label for a recurring series that lacks an explicit one.
+  function inferCadence(events) {
+    const days = new Set();
+    for (const e of events) {
+      const d = new Date(e.start);
+      if (!isNaN(d.getTime())) days.add(d.getDay());
+    }
+    const dateCount = new Set(events.map(e => (e.start || '').slice(0, 10))).size;
+    if (days.size >= 5) return 'Most days · ' + dateCount + ' dates';
+    if (days.size === 1) return 'Weekly · ' + DOW_SHORT[[...days][0]] + 's';
+    const names = [...days].sort((a, b) => a - b).map(d => DOW_SHORT[d]).join(', ');
+    return (names || 'Recurring') + ' · ' + dateCount + ' dates';
+  }
+
+  // Split allEvents into one-time events (grid) and recurring series (side panel).
+  // A group of same-titled events is "recurring" if any instance carries an explicit
+  // recurrence label (curated resources) or it occurs on 3+ distinct dates.
+  function splitRecurring() {
+    oneTimeEvents = [];
+    recurringSeries = [];
+
+    const groups = new Map();
+    for (const ev of allEvents) {
+      const key = normalizeTitle(ev.summary);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(ev);
+    }
+
+    for (const evs of groups.values()) {
+      const hasLabel = evs.some(e => e.recurrence);
+      const distinctDates = new Set(evs.map(e => (e.start || '').slice(0, 10))).size;
+
+      if (hasLabel || distinctDates >= 3) {
+        const sorted = evs.slice().sort((a, b) => getEventDateTime(a) - getEventDateTime(b));
+        const next = sorted[0];
+        recurringSeries.push({
+          title: next.summary,
+          tag: next.tag || 'General',
+          location: (next.location || '').split(',')[0].trim(),
+          cadence: next.recurrence || inferCadence(evs),
+          next: next
+        });
+      } else {
+        for (const e of evs) oneTimeEvents.push(e);
+      }
+    }
+
+    recurringSeries.sort((a, b) => getEventDateTime(a.next) - getEventDateTime(b.next));
+    oneTimeEvents.sort((a, b) => getEventDateTime(a) - getEventDateTime(b));
+  }
+
+  // Render the recurring side panel, optionally filtered to a category.
+  function renderRecurringPanel(category) {
+    const list = document.getElementById('recurring-list');
+    const countEl = document.getElementById('recurring-count');
+    if (!list) return;
+
+    const items = (category && category !== 'all')
+      ? recurringSeries.filter(s => getEventCategories(s.tag).includes(category))
+      : recurringSeries;
+
+    if (countEl) countEl.textContent = items.length;
+    list.innerHTML = '';
+
+    if (items.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'recurring-empty';
+      empty.textContent = 'No recurring events in this category.';
+      list.appendChild(empty);
+      return;
+    }
+
+    items.forEach(s => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'recurring-item';
+
+      const top = document.createElement('div');
+      top.className = 'recurring-item-top';
+      const dot = document.createElement('span');
+      dot.className = 'recurring-dot ' + getTagClass(s.tag);
+      const title = document.createElement('span');
+      title.className = 'recurring-title';
+      title.textContent = s.title;
+      top.appendChild(dot);
+      top.appendChild(title);
+
+      const cadence = document.createElement('div');
+      cadence.className = 'recurring-cadence';
+      cadence.textContent = s.cadence;
+
+      btn.appendChild(top);
+      btn.appendChild(cadence);
+
+      if (s.location) {
+        const loc = document.createElement('div');
+        loc.className = 'recurring-loc';
+        loc.textContent = s.location;
+        btn.appendChild(loc);
+      }
+
+      btn.addEventListener('click', () => showEventDetails(s.next));
+      list.appendChild(btn);
+    });
   }
 
   // ========== STEP 2: Setup Category Filter (dropdown + chips) ==========
@@ -688,8 +805,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const detailTag = document.getElementById('detail-tag');
     detailTag.textContent = event.tag || 'General';
     detailTag.className = 'event-tag ' + getTagClass(event.tag);
+    const recurNote = event.recurrence ? ('Recurs: ' + event.recurrence + '. ') : '';
     document.getElementById('detail-description').textContent =
-      normalizeDescription(event.description) || 'No description provided by source.';
+      recurNote + (normalizeDescription(event.description) || 'No description provided by source.');
 
     // Set the event link if it exists
     let linkElement = document.getElementById('detail-link');
@@ -777,8 +895,11 @@ document.addEventListener("DOMContentLoaded", function () {
     let selectedCategory = categorySelect.value;
     let filtered = [];
 
+    // Keep the recurring side panel in sync with the selected category
+    renderRecurringPanel(selectedCategory);
+
     // Use Fuse.js for fuzzy search if there's search text
-    let searchResults = allEvents;
+    let searchResults = oneTimeEvents;
     if (searchText !== '' && fuse) {
       const fuseResults = fuse.search(searchText);
       searchResults = fuseResults.map(result => result.item);

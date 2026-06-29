@@ -498,11 +498,12 @@ class TestScrapeIntegration(unittest.TestCase):
              patch.object(scrape, "scrape_parkland",   return_value={0: {"summary": "PK"}}), \
              patch.object(scrape, "scrape_urbana_library", return_value={0: {"summary": "UFL"}}), \
              patch.object(scrape, "scrape_gies",       return_value={0: {"summary": "GIES"}}), \
-             patch.object(scrape, "scrape_cs",         return_value={0: {"summary": "CS"}}):
+             patch.object(scrape, "scrape_cs",         return_value={0: {"summary": "CS"}}), \
+             patch.object(scrape, "scrape_food_resources", return_value={0: {"summary": "FOOD"}}):
             data = scrape.scrape()
-        self.assertEqual(len(data), 11)
+        self.assertEqual(len(data), 12)
         summaries = {e["summary"] for e in data.values()}
-        self.assertEqual(summaries, {"G", "SF", "A", "KC", "KAM", "MUS", "SPU", "PK", "UFL", "GIES", "CS"})
+        self.assertEqual(summaries, {"G", "SF", "A", "KC", "KAM", "MUS", "SPU", "PK", "UFL", "GIES", "CS", "FOOD"})
 
     def test_main_raises_when_all_empty(self):
         def fake_scrape():
@@ -518,6 +519,7 @@ class TestScrapeIntegration(unittest.TestCase):
                 "urbana_library": {"events": 0, "status": "empty_or_failed"},
                 "gies":       {"events": 0, "status": "empty_or_failed"},
                 "cs":         {"events": 0, "status": "empty_or_failed"},
+                "food_resources": {"events": 0, "status": "empty_or_failed"},
             }
             return {}
 
@@ -539,7 +541,8 @@ class TestScrapeIntegration(unittest.TestCase):
              patch.object(scrape, "scrape_parkland",   return_value={}), \
              patch.object(scrape, "scrape_urbana_library", return_value={}), \
              patch.object(scrape, "scrape_gies",       return_value={}), \
-             patch.object(scrape, "scrape_cs",         return_value={}):
+             patch.object(scrape, "scrape_cs",         return_value={}), \
+             patch.object(scrape, "scrape_food_resources", return_value={}):
             data = scrape.scrape()
 
         self.assertEqual(len(data), 1)

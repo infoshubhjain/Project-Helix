@@ -512,10 +512,116 @@ body.dark-mode #search-events:focus {
   color: var(--surface);
 }
 
+/* ========== BROWSE LAYOUT (grid + recurring rail) ========== */
+.browse-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+.recurring-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  padding: 16px;
+  position: sticky;
+  top: 72px;
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+}
+.recurring-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.recurring-header h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.recurring-count-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.recurring-sub {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  margin: 4px 0 12px;
+  line-height: 1.4;
+}
+.recurring-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.recurring-list::-webkit-scrollbar { width: 4px; }
+.recurring-list::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 2px; }
+.recurring-item {
+  text-align: left;
+  background: var(--surface);
+  border: none;
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: inherit;
+  transition: background 0.12s;
+}
+.recurring-item:hover { background: var(--surface-2); }
+.recurring-item-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.recurring-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text);
+  flex-shrink: 0;
+}
+.recurring-dot.tag-freefood { background: var(--accent); }
+.recurring-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+.recurring-cadence {
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+.recurring-loc {
+  font-size: 0.7rem;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recurring-empty {
+  font-size: 0.8125rem;
+  color: var(--text-3);
+  padding: 12px;
+}
+
 /* ========== EVENT CARDS — PREMIUM MONOCHROME ========== */
 .browse-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 1px;
   background: var(--line);
   border: 1px solid var(--line);
@@ -1199,6 +1305,9 @@ footer {
 @media (max-width: 1100px) {
   .calendar-grid-container { grid-template-columns: 1fr; }
   .browse-container { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .browse-layout { grid-template-columns: 1fr; }
+  .recurring-panel { position: static; max-height: none; order: -1; }
+  .recurring-list { max-height: 320px; }
 }
 
 @media (max-width: 768px) {
