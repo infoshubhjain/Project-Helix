@@ -283,9 +283,10 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('event-location').value = event.location || '';
         document.getElementById('event-description').value = event.description || '';
         
-        // Format datetime-local input
+        // Format datetime-local input in LOCAL time (toISOString would shift to UTC)
         const startDate = new Date(event.start);
-        const dateTimeLocal = startDate.toISOString().slice(0, 16);
+        const pad = (n) => String(n).padStart(2, '0');
+        const dateTimeLocal = `${startDate.getFullYear()}-${pad(startDate.getMonth() + 1)}-${pad(startDate.getDate())}T${pad(startDate.getHours())}:${pad(startDate.getMinutes())}`;
         document.getElementById('event-date').value = dateTimeLocal;
         
         // Close parse modal and open add event modal

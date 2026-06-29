@@ -44,27 +44,28 @@ class ManualEventParser {
         };
         
         this.timePatterns = [
-            // 12-hour format with AM/PM
+            // Time range FIRST — requires am/pm on the end so plain number ranges
+            // (e.g. "Room 204-206") are not mistaken for times.
+            /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:[-–—]|to)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/gi,
+            // 12-hour format with minutes and AM/PM
             /(\d{1,2}):(\d{2})\s*(am|pm)/gi,
             // 12-hour format without minutes
             /(\d{1,2})\s*(am|pm)/gi,
             // 24-hour format
-            /(\d{1,2}):(\d{2})\s*(?:hours?|hrs?)/gi,
-            // Time ranges
-            /(\d{1,2}):?(\d{0,2})?\s*(am|pm)?\s*[-–]\s*(\d{1,2}):?(\d{0,2})?\s*(am|pm)?/gi
+            /(\d{1,2}):(\d{2})\s*(?:hours?|hrs?)/gi
         ];
         
         this.datePatterns = [
             // Month Day, Year
-            /(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/gi,
+            /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/gi,
             // Day Month, Year
-            /(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec),?\s*(\d{4})?/gi,
+            /\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec),?\s*(\d{4})?/gi,
+            // Next/last weekday (checked before bare weekday so the modifier is captured)
+            /\b(next|last)\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|wed|thu|fri|sat)\b/gi,
             // Weekday relative dates
-            /(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|wed|thu|fri|sat)/gi,
+            /\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|wed|thu|fri|sat)\b/gi,
             // Today, tomorrow, yesterday
-            /(today|tomorrow|yesterday)/gi,
-            // Next/last weekday
-            /(next|last)\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|wed|thu|fri|sat)/gi
+            /\b(today|tomorrow|yesterday)\b/gi
         ];
     }
     
@@ -88,8 +89,12 @@ class ManualEventParser {
     }
     
     splitIntoEvents(text) {
-        // Split by common sentence separators and newlines
-        return text.split(/[\.\n]+/).filter(s => s.trim().length > 0);
+        // Split on line breaks, semicolons, and bullet markers — NOT bare periods,
+        // which would shatter abbreviations ("Dr.", "St.") and decimals.
+        return text
+            .split(/[\n;]+|\s[•*]\s/)
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
     }
     
     extractEventFromSentence(sentence, currentYear, options) {
@@ -187,10 +192,16 @@ class ManualEventParser {
     
     parseDate(match, currentYear) {
         const [, monthOrDay, dayOrMonth, year] = match;
-        
+        const first = monthOrDay.toLowerCase();
+
+        // "next/last <weekday>" — modifier in group 1, weekday in group 2
+        if ((first === 'next' || first === 'last') && dayOrMonth) {
+            return this.parseRelativeDate(dayOrMonth.toLowerCase(), first);
+        }
+
         // Check if it's a weekday
-        if (this.weekdays.includes(monthOrDay.toLowerCase()) || this.weekdayAbbrevs.includes(monthOrDay.toLowerCase())) {
-            return this.parseRelativeDate(monthOrDay.toLowerCase());
+        if (this.weekdays.includes(first) || this.weekdayAbbrevs.includes(first)) {
+            return this.parseRelativeDate(first);
         }
         
         // Check if it's today/tomorrow/yesterday
@@ -223,16 +234,24 @@ class ManualEventParser {
         return new Date(yearToUse, month - 1, day);
     }
     
-    parseRelativeDate(weekday) {
+    parseRelativeDate(weekday, direction) {
         const today = new Date();
         const currentDay = today.getDay();
         const targetDay = this.getWeekdayNumber(weekday);
-        
+
+        if (direction === 'last') {
+            let daysAgo = currentDay - targetDay;
+            if (daysAgo <= 0) daysAgo += 7;
+            const result = new Date(today);
+            result.setDate(result.getDate() - daysAgo);
+            return result;
+        }
+
         let daysToAdd = targetDay - currentDay;
         if (daysToAdd <= 0) {
             daysToAdd += 7; // Next occurrence
         }
-        
+
         const result = new Date(today);
         result.setDate(result.getDate() + daysToAdd);
         return result;
@@ -242,7 +261,7 @@ class ManualEventParser {
         const result = { start: null, end: null };
         
         // Check if it's a time range
-        if (match[0].includes('-') || match[0].includes('–')) {
+        if (/[-–—]|\bto\b/i.test(match[0])) {
             return this.parseTimeRange(match, eventDate);
         }
         
@@ -281,32 +300,33 @@ class ManualEventParser {
         const result = { start: null, end: null };
         
         // Extract start and end times
-        const rangeMatch = match[0].match(/(\d{1,2}):?(\d{0,2})?\s*(am|pm)?\s*[-–]\s*(\d{1,2}):?(\d{0,2})?\s*(am|pm)?/i);
-        
+        const rangeMatch = match[0].match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:[-–—]|to)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+
         if (!rangeMatch) {
             return this.parseTime(match, eventDate); // Fallback to single time parsing
         }
-        
-        const [, startHours, startMinutes, startMeridiem, endHours, endMinutes, endMeridiem] = rangeMatch;
-        
+
+        const [, startHours, startMinutes, startMeridiemRaw, endHours, endMinutes, endMeridiemRaw] = rangeMatch;
+
+        // A range often states the meridiem only once ("7-9pm" or "9am-12").
+        // Share it across both ends when one side omits it.
+        const startMeridiem = (startMeridiemRaw || endMeridiemRaw || '').toLowerCase();
+        const endMeridiem = (endMeridiemRaw || startMeridiemRaw || '').toLowerCase();
+
         // Parse start time
         let sh = parseInt(startHours);
         let sm = parseInt(startMinutes || '0');
         if (startMeridiem) {
-            if (startMeridiem.toLowerCase() === 'pm' && sh !== 12) sh += 12;
-            if (startMeridiem.toLowerCase() === 'am' && sh === 12) sh = 0;
+            if (startMeridiem === 'pm' && sh !== 12) sh += 12;
+            if (startMeridiem === 'am' && sh === 12) sh = 0;
         }
-        
+
         // Parse end time
         let eh = parseInt(endHours);
         let em = parseInt(endMinutes || '0');
         if (endMeridiem) {
-            if (endMeridiem.toLowerCase() === 'pm' && eh !== 12) eh += 12;
-            if (endMeridiem.toLowerCase() === 'am' && eh === 12) eh = 0;
-        } else if (startMeridiem) {
-            // Inherit meridiem if not specified for end time
-            if (startMeridiem.toLowerCase() === 'pm' && eh !== 12) eh += 12;
-            if (startMeridiem.toLowerCase() === 'am' && eh === 12) eh = 0;
+            if (endMeridiem === 'pm' && eh !== 12) eh += 12;
+            if (endMeridiem === 'am' && eh === 12) eh = 0;
         }
         
         result.start = new Date(eventDate);
@@ -326,9 +346,11 @@ class ManualEventParser {
     extractLocation(sentence) {
         const lowerSentence = sentence.toLowerCase();
         
-        // Check for UIUC locations first
+        // Check for UIUC locations first. Match on word boundaries so short keys
+        // like "arc", "eb", "ugl" don't match inside words (e.g. "arc" in "march").
         for (const [key, location] of Object.entries(this.uiucLocations)) {
-            if (lowerSentence.includes(key)) {
+            const keyRe = new RegExp('\\b' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+            if (keyRe.test(lowerSentence)) {
                 let locationText = location.building;
                 
                 // Extract room number if present
@@ -341,47 +363,55 @@ class ManualEventParser {
             }
         }
         
-        // Generic location patterns
-        const locationPatterns = [
-            /(?:in|at|@)\s+([^,.!?]+?)(?:\s+(?:for|to|with|and|on|at|in)|[,.!?])/gi,
-            /(?:room|building|hall|center)\s+([^,.!?]+)/gi
-        ];
-        
-        for (const pattern of locationPatterns) {
-            const matches = [...sentence.matchAll(pattern)];
-            if (matches.length > 0) {
-                return matches[0][1].trim();
-            }
+        // Room / building number, e.g. "Room 243", "Rm 3102"
+        const roomOnly = sentence.match(/\b(?:room|rm)\s+([\w-]+)/i);
+        if (roomOnly) {
+            return `Room ${roomOnly[1]}`;
         }
-        
+
+        // Generic venue: "at/in [the] <Capitalized Name> <venue keyword>" — require a
+        // venue keyword so phrases like "in Python programming" aren't treated as places.
+        const venue = 'hall|center|centre|building|library|union|stadium|auditorium|theater|theatre|lab|field|arena|quad|gym|cafe|hub|institute|museum|park';
+        const venueMatch = sentence.match(
+            new RegExp('\\b(?:at|in)\\s+(?:the\\s+)?([A-Z][\\w&\'-]*(?:\\s+[A-Z][\\w&\'-]*)*\\s+(?:' + venue + '))\\b', 'i')
+        );
+        if (venueMatch) {
+            return venueMatch[1].trim();
+        }
+
         return '';
     }
     
     extractTitle(sentence, dateInfo) {
-        // Remove date/time information from title
         let title = sentence.trim();
-        
-        // Remove found date and time patterns
-        if (dateInfo.dateFound) {
-            title = title.replace(dateInfo.dateFound, '');
-        }
-        if (dateInfo.timeFound) {
-            title = title.replace(dateInfo.timeFound, '');
-        }
-        
-        // Remove common location indicators
-        title = title.replace(/\b(in|at|@)\s+[^,.!?]+/gi, '');
-        
-        // Clean up extra spaces and punctuation
+
+        // Remove the matched time and date spans (time first — it may sit inside the date span)
+        if (dateInfo.timeFound) title = title.replace(dateInfo.timeFound, ' ');
+        if (dateInfo.dateFound) title = title.replace(dateInfo.dateFound, ' ');
+
+        // Remove leftover weekday words (e.g. "on Tuesday" when an explicit date was used)
+        title = title.replace(/\b(?:on\s+)?(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|wed|thu|fri|sat)\b,?/gi, ' ');
+
+        // Drop a connector immediately preceding where a date/time used to be (e.g. "on", "at")
+        title = title.replace(/\b(?:on|at|from)\s{2,}/gi, ' ');
+
+        // Remove venue-like location phrases ("at/in/@ ... <venue keyword> ...")
+        const venue = 'room|hall|center|centre|building|library|union|stadium|auditorium|theat(?:er|re)|lab|field|arena|quad|gym|cafe|hub|institute|museum';
+        title = title.replace(new RegExp('\\s*\\b(?:at|in|@)\\s+[^,.!?]*\\b(?:' + venue + ')\\b[^,.!?]*', 'gi'), ' ');
+        title = title.replace(/\s*@\s*[^,.!?]+/g, ' ');
+
+        // Collapse whitespace, then strip trailing/leading connector words and stray separators
         title = title.replace(/\s+/g, ' ').trim();
-        title = title.replace(/^[,\.\s]+|[,\.\s]+$/g, '');
-        
-        // If title is too short, use the first part of the original sentence
-        if (title.length < 5) {
+        title = title.replace(/(?:\s*\b(?:on|at|in|from|to|for|with|the|of|and)\b)+\s*$/i, '');
+        title = title.replace(/^(?:\b(?:on|at|in|from|to|for|with|the|of|and)\b\s*)+/i, '');
+        title = title.replace(/^[\s,.\-–—]+|[\s,.\-–—]+$/g, '').trim();
+
+        // If too short, fall back to the leading words of the original sentence
+        if (title.length < 3) {
             const words = sentence.trim().split(/\s+/);
-            title = words.slice(0, 5).join(' ');
+            title = words.slice(0, 6).join(' ');
         }
-        
+
         return title;
     }
     
