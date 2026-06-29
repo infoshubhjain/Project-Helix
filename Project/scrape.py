@@ -7,7 +7,7 @@ import re
 import json
 import time
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 from playwright.sync_api import sync_playwright
 import requests
 from urllib3.util.retry import Retry
@@ -277,7 +277,6 @@ def scrape_general() -> Dict[str, Any]:
                         # Attempt to parse date to confirm it's a date header
                         # Format: DayOfWeek, Month Day, Year
                         current_date_obj = datetime.strptime(date_str, "%A, %B %d, %Y")
-                        current_date_str = current_date_obj.strftime("%Y-%m-%d")
                     except ValueError:
                         # Not a date header, skip
                         continue

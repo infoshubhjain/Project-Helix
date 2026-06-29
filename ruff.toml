@@ -1,0 +1,6 @@
+# Ruff configuration for Project Helix.
+# The scrapers use a deliberate compact one-line style for time/meridiem
+# parsing (e.g. `if mer == "pm" and h != 12: h += 12`), so E701 is ignored.
+# Pyflakes (F) and the remaining pycodestyle error checks stay enabled.
+[lint]
+ignore = ["E701"]
