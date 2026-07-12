@@ -825,11 +825,66 @@ class TestScrapeIntegration(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 scrape.main()
 
+    def test_salvage_reuses_previous_run_for_empty_source(self):
+        import json
+        import tempfile
+        # Previous run's file: one future-dated kcpa event, source-tagged.
+        prev = {"0": {"summary": "Old KCPA Show", "source": "kcpa",
+                      "start": "2099-01-01T19:00:00-06:00", "end": "2099-01-01T21:00:00-06:00"}}
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(prev, f)
+
+        empty = {p: patch.object(scrape, p, return_value={}) for p in [
+            "scrape_state_farm", "scrape_athletics", "scrape_kcpa", "scrape_kam",
+            "scrape_music", "scrape_spurlock", "scrape_parkland",
+            "scrape_urbana_library", "scrape_gies", "scrape_cs", "scrape_food_resources",
+        ]}
+        with patch.object(scrape, "OUTPUT_FILE", f.name), \
+             patch.object(scrape, "scrape_general", return_value={0: {"summary": "Fresh"}}):
+            for p in empty.values():
+                p.start()
+            try:
+                data = scrape.scrape()
+            finally:
+                for p in empty.values():
+                    p.stop()
+        os.unlink(f.name)
+
+        summaries = {e["summary"] for e in data.values()}
+        self.assertIn("Fresh", summaries)
+        self.assertIn("Old KCPA Show", summaries)  # salvaged, not lost
+        self.assertEqual(scrape.last_scrape_stats["kcpa"]["status"], "salvaged_from_previous_run")
+        self.assertEqual(scrape.last_scrape_stats["kcpa"]["salvaged"], 1)
+
+    def test_main_publishes_when_critical_source_salvaged(self):
+        import json
+        import tempfile
+        out = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        out.close()
+
+        def fake_scrape():
+            scrape.last_scrape_stats = {
+                "general": {"events": 0, "status": "salvaged_from_previous_run", "salvaged": 5},
+                "parkland": {"events": 3, "status": "success"},
+                "urbana_library": {"events": 2, "status": "success"},
+            }
+            return {0: {"summary": "Something"}}
+
+        with patch.object(scrape, "OUTPUT_FILE", out.name), \
+             patch.object(scrape, "scrape", side_effect=fake_scrape):
+            scrape.main()  # must NOT raise — salvage covered the broken critical source
+
+        with open(out.name) as f:
+            saved = json.load(f)
+        os.unlink(out.name)
+        self.assertEqual(len(saved), 1)
+
     def test_one_failing_source_does_not_abort_others(self):
         def boom():
             raise RuntimeError("source down")
 
-        with patch.object(scrape, "scrape_state_farm", side_effect=boom), \
+        with patch.object(scrape, "OUTPUT_FILE", "/nonexistent/no-salvage.json"), \
+             patch.object(scrape, "scrape_state_farm", side_effect=boom), \
              patch.object(scrape, "scrape_athletics",  return_value={}), \
              patch.object(scrape, "scrape_general",    return_value={0: {"summary": "G"}}), \
              patch.object(scrape, "scrape_kcpa",       return_value={}), \

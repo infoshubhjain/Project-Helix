@@ -47,7 +47,7 @@ GitHub Actions (daily cron) → scrape.py → Project/scraped_events.json (commi
 
 Post-processing, in order: `cap_events()` per source → merge into a numbered-key dict → `drop_past_events()` → `dedupe_events()` (keyed by normalized title + start-to-the-minute; longer description wins) → minified JSON.
 
-Health checks in `main()`: the run **raises** (preserving the previously committed JSON) if all sources return zero events, or if any source in `CRITICAL_SOURCES` (`general`, `parkland`, `urbana_library`) returns zero. If you add a source that should never be empty, add it there.
+Resilience layers: every source is isolated (one failure never stops the others); each event carries a `source` tag, and any source returning zero events **salvages** its own events from the previously published JSON (they age out via `drop_past_events`, so a dead source decays gracefully). Empty sources emit `::warning::` annotations on the Actions run. The run only **raises** (preserving the committed JSON) if all sources are empty, or a `CRITICAL_SOURCES` member (`general`, `parkland`, `urbana_library`) is empty *and* nothing could be salvaged. If you add a source that should never be empty, add it there.
 
 Every event dict must pass `validate_event()`; `detect_free_food()` and `classify_event()` assign the tag string the frontend filters on.
 

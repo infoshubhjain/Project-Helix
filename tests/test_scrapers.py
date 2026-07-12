@@ -91,7 +91,8 @@ class TestScrapeGeneral(unittest.TestCase):
 
 class TestScrape(unittest.TestCase):
     def test_raises_on_all_empty_sources(self):
-        with patch("scrape.scrape_general",    return_value={}), \
+        with patch.object(scrape, "OUTPUT_FILE", "/nonexistent/no-salvage.json"), \
+             patch("scrape.scrape_general",    return_value={}), \
              patch("scrape.scrape_state_farm", return_value={}), \
              patch("scrape.scrape_athletics",  return_value={}), \
              patch("scrape.scrape_kcpa",       return_value={}), \

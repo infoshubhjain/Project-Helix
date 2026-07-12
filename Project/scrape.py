@@ -1683,6 +1683,10 @@ def scrape_food_resources() -> Dict[str, Any]:
 # Sources that should always return events; zero means a likely outage/markup break.
 CRITICAL_SOURCES = {"general", "parkland", "urbana_library"}
 
+# The published dataset — also the salvage pool: when a source breaks, its
+# events from the previous run are reused so one failure never blanks it.
+OUTPUT_FILE = os.path.join(os.path.dirname(__file__), "scraped_events.json")
+
 
 def drop_past_events(events: Dict[Any, Dict[str, Any]], now: Optional[datetime] = None) -> Dict[Any, Dict[str, Any]]:
     """Remove events whose end time is already in the past (re-keyed sequentially)."""
@@ -1774,6 +1778,7 @@ def scrape():
             if isinstance(scraped, dict):
                 source_events = cap_events(scraped, MAX_EVENTS_PER_SOURCE)
                 for event in source_events.values():
+                    event["source"] = scraper_name  # enables per-source salvage
                     combined_json_data[len(combined_json_data)] = event
             else:
                 logger.warning(f"{scraper_name} scraper returned non-dict payload; skipping merge.")
@@ -1785,6 +1790,28 @@ def scrape():
             last_scrape_stats[scraper_name] = {"events": source_count, "status": status}
 
     logger.info("Scrape summary by source: %s", last_scrape_stats)
+
+    # Salvage: a source that returned nothing shouldn't blank its events —
+    # reuse the ones published last run. drop_past_events ages them out, so a
+    # long-dead source decays gracefully instead of vanishing overnight.
+    empty_sources = {n for n, s in last_scrape_stats.items() if s["events"] == 0}
+    if empty_sources:
+        try:
+            with open(OUTPUT_FILE) as f:
+                previous = json.load(f)
+        except (OSError, ValueError):
+            previous = {}
+        for ev in previous.values():
+            src = ev.get("source")
+            if src in empty_sources:
+                combined_json_data[len(combined_json_data)] = ev
+                stats = last_scrape_stats[src]
+                stats["salvaged"] = stats.get("salvaged", 0) + 1
+                stats["status"] = "salvaged_from_previous_run"
+        for name in sorted(empty_sources):
+            salvaged = last_scrape_stats[name].get("salvaged", 0)
+            if salvaged:
+                logger.warning("Source '%s' empty — reusing %d events from previous run.", name, salvaged)
 
     raw_count = len(combined_json_data)
     combined_json_data = drop_past_events(combined_json_data)
@@ -1805,34 +1832,40 @@ def main():
     if source_event_total == 0:
         raise RuntimeError("All sources returned zero events. Failing run to surface scraper outage.")
 
-    # Health check — fail (and skip the save) if a critical source produced nothing,
-    # so a markup break surfaces in CI instead of silently shipping degraded data.
+    # Health check — fail (and skip the save) only if a critical source produced
+    # nothing AND nothing could be salvaged from the previous run. With salvage,
+    # publishing (fresh healthy sources + last-known-good for the broken one) is
+    # strictly better than aborting.
     broken = sorted(
         name for name in CRITICAL_SOURCES
         if last_scrape_stats.get(name, {}).get("events", 0) == 0
+        and not last_scrape_stats.get(name, {}).get("salvaged", 0)
     )
     if broken:
         raise RuntimeError(
-            f"Critical source(s) returned zero events: {', '.join(broken)}. "
-            "Likely a site or markup change — failing run to surface the outage "
-            "and preserve the previously committed data."
+            f"Critical source(s) returned zero events and nothing could be salvaged: "
+            f"{', '.join(broken)}. Likely a site or markup change — failing run to "
+            "surface the outage and preserve the previously committed data."
         )
 
-    # Non-critical sources that go silent shouldn't fail the run (some have
-    # legitimate quiet periods), but they must be visible: emit GitHub Actions
-    # warning annotations so the run page flags them. No-op locally.
+    # Any source that went silent must stay visible even though the run succeeds:
+    # emit GitHub Actions warning annotations on the run page. No-op locally.
     for name, stat in sorted(last_scrape_stats.items()):
-        if stat.get("events", 0) == 0 and name not in CRITICAL_SOURCES:
-            warn = f"Source '{name}' returned zero events — possible site or markup change."
+        if stat.get("events", 0) == 0:
+            salvaged = stat.get("salvaged", 0)
+            if salvaged:
+                warn = (f"Source '{name}' returned zero events — reused {salvaged} "
+                        "events from the previous run. Check for a site/markup change.")
+            else:
+                warn = f"Source '{name}' returned zero events — possible site or markup change."
             logger.warning(warn)
             print(f"::warning title=Empty scraper source::{warn}")
 
     # Save to JSON file (minified for faster loading)
-    output_file = os.path.join(os.path.dirname(__file__), "scraped_events.json")
-    with open(output_file, "w") as f:
+    with open(OUTPUT_FILE, "w") as f:
         json.dump(data, f, separators=(',', ':'))
 
-    print(f"Scraped {len(data)} events. Saved to {output_file}")
+    print(f"Scraped {len(data)} events. Saved to {OUTPUT_FILE}")
     
 if __name__ == "__main__":
     main()
