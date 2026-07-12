@@ -7,6 +7,7 @@ const ASSETS = [
   './index.html',
   './manifest.webmanifest',
   './Project/static/style.css',
+  './Project/static/google-config.js',
   './Project/static/event-utils.js',
   './Project/static/browse-events.js',
   './Project/static/script.js',

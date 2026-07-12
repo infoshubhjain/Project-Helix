@@ -190,6 +190,11 @@ function escapeCSV(text) {
   // Convert to string if not already
   text = String(text);
 
+  // Neutralize spreadsheet formula injection (=, +, -, @ leaders execute in Excel)
+  if (/^[=+\-@]/.test(text)) {
+    text = "'" + text;
+  }
+
   // If text contains comma, quote, or newline, wrap in quotes and escape quotes
   if (text.includes(',') || text.includes('"') || text.includes('\n')) {
     text = '"' + text.replace(/"/g, '""') + '"';

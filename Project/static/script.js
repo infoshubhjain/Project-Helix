@@ -262,3 +262,13 @@ function removeToast(toast) {
   }, 300);
 }
 
+// ========== PWA: SERVICE WORKER ==========
+// Registered here (not inline in index.html) so the CSP can forbid inline scripts.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('service-worker.js').catch(function (err) {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}
+

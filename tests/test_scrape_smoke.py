@@ -410,6 +410,37 @@ class TestScrapeGeneral(unittest.TestCase):
         self.assertEqual(data, {})
 
 
+class TestRecurringEventKeepsAllDates(unittest.TestCase):
+    """A recurring event shares one detail URL across date headers — every
+    occurrence must survive dedup (keyed by date+link, not link alone)."""
+
+    RECURRING_HTML = """
+    <div id="ws-calendar-container">
+      <h2>Monday, March 02, 2026</h2>
+      <ul class="event-entries">
+        <li class="entry">
+          <div class="title"><a href="/detail/7?eventId=42">Weekly Tutoring</a></div>
+          <div class="event-meta"><li class="date">5:00 pm</li><li class="location">Grainger</li></div>
+        </li>
+      </ul>
+      <h2>Monday, March 09, 2026</h2>
+      <ul class="event-entries">
+        <li class="entry">
+          <div class="title"><a href="/detail/7?eventId=42">Weekly Tutoring</a></div>
+          <div class="event-meta"><li class="date">5:00 pm</li><li class="location">Grainger</li></div>
+        </li>
+      </ul>
+    </div>
+    """
+
+    def test_both_occurrences_kept(self):
+        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com/list"]), \
+             patch.object(scrape, "safe_request", return_value=MockResponse(self.RECURRING_HTML)):
+            data = scrape.scrape_general()
+        starts = sorted(e["start"][:10] for e in data.values())
+        self.assertEqual(starts, ["2026-03-02", "2026-03-09"])
+
+
 class TestScrapeGeneral2026Markup(unittest.TestCase):
     """The July 2026 site redesign: \xa0 in date headers, entry-heading/entry-meta."""
 

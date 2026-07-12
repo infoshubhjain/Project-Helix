@@ -365,10 +365,13 @@ def scrape_general() -> Dict[str, Any]:
                                 else:
                                     event_info["htmlLink"] = raw_href
 
-                                # Skip duplicate events seen on another calendar page
-                                if event_info["htmlLink"] in seen_links:
+                                # Skip duplicates from overlapping calendar pages —
+                                # keyed by (date, link) so a recurring event keeps
+                                # every occurrence, not just its first date.
+                                seen_key = (current_date_obj.date(), event_info["htmlLink"])
+                                if seen_key in seen_links:
                                     continue
-                                seen_links.add(event_info["htmlLink"])
+                                seen_links.add(seen_key)
                                     
                                 # Meta: Time and Location — old markup: div.event-meta with
                                 # li.date / li.location; redesign: dl.entry-meta with
@@ -1443,7 +1446,15 @@ def scrape_food_resources() -> Dict[str, Any]:
     """Expand the curated recurring free-food resources into upcoming dated events."""
     print("\n🔍 Generating recurring free-food resource events...")
     try:
-        from food_resources import generate_food_events
+        from food_resources import generate_food_events, ACADEMIC_TERMS
+        # The term table needs a manual yearly update — warn while there is
+        # still runway instead of letting academic programs silently vanish.
+        last_term_end = max(end for _, end in ACADEMIC_TERMS)
+        if datetime.now().date() > last_term_end - timedelta(days=60):
+            warn = (f"ACADEMIC_TERMS in food_resources.py ends {last_term_end} — "
+                    "add next year's UIUC term dates.")
+            logger.warning(warn)
+            print(f"::warning title=ACADEMIC_TERMS needs updating::{warn}")
         events = generate_food_events()
         print(f"   ✅ Food resources: {len(events)} upcoming occurrences")
         return events
@@ -1590,6 +1601,15 @@ def main():
             "Likely a site or markup change — failing run to surface the outage "
             "and preserve the previously committed data."
         )
+
+    # Non-critical sources that go silent shouldn't fail the run (some have
+    # legitimate quiet periods), but they must be visible: emit GitHub Actions
+    # warning annotations so the run page flags them. No-op locally.
+    for name, stat in sorted(last_scrape_stats.items()):
+        if stat.get("events", 0) == 0 and name not in CRITICAL_SOURCES:
+            warn = f"Source '{name}' returned zero events — possible site or markup change."
+            logger.warning(warn)
+            print(f"::warning title=Empty scraper source::{warn}")
 
     # Save to JSON file (minified for faster loading)
     output_file = os.path.join(os.path.dirname(__file__), "scraped_events.json")

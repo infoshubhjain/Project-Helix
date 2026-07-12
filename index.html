@@ -7,7 +7,7 @@
   <!-- Content-Security-Policy: restrict script/style sources to known trusted origins -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self';
-                 script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net;
+                 script-src 'self' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net;
                  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
                  font-src 'self' https://fonts.gstatic.com;
                  frame-src https://calendar.google.com https://accounts.google.com https://content.googleapis.com https://apis.google.com;
@@ -297,18 +297,17 @@
        an authorised JavaScript origin.
     4. Replace the two placeholder values below with your restricted credentials.
     ─────────────────────────────────────────────────────────────────────────────
-    NEVER commit real credentials to a public repository.
-    If you have already done so, rotate them immediately in Google Cloud Console.
+    NEVER commit unrestricted credentials to a public repository.
+    If you have, rotate them immediately in Google Cloud Console.
+    Values live in Project/static/google-config.js (external file so the CSP
+    can forbid inline scripts).
     ─────────────────────────────────────────────────────────────────────────────
   -->
-  <script>
-    const GOOGLE_CLIENT_ID = '691968245686-5cdnqs5inasr62td91id893m70lg3k09.apps.googleusercontent.com';
-    const GOOGLE_API_KEY   = 'AIzaSyD3ZFca0_TgjnstevpbHfo1BNtEWtwlAO4';
-  </script>
 
   <!-- Toast Notification Container -->
   <div id="toast-container"></div>
 
+  <script src="Project/static/google-config.js"></script>
   <script src="Project/static/event-utils.js"></script>
   <script src="Project/static/manual-event-parser.js"></script>
   <script src="Project/static/manual-event-handler.js"></script>
@@ -316,17 +315,6 @@
   <script src="Project/static/calendar-connect.js"></script>
   <script src="Project/static/script.js"></script>
   <script src="Project/static/browse-events.js"></script>
-
-  <!-- PWA: register service worker for offline support + instant repeat loads -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
-        navigator.serviceWorker.register('service-worker.js').catch(function (err) {
-          console.warn('Service worker registration failed:', err);
-        });
-      });
-    }
-  </script>
 
   <footer>
     Copyright © 2025 Project Helix
