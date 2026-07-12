@@ -19,7 +19,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
+      # Two cron entries cover DST; only the one landing at 9 AM Chicago proceeds.
+      # A step output gates the job — `exit 0` inside a step does NOT skip later steps.
+      - name: Check for duplicate DST/standard cron run
+        id: guard
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$(TZ=America/Chicago date +%H)" = "09" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping duplicate DST/standard cron run."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Python
+        if: steps.guard.outputs.go == 'true'
         uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           python-version: '3.10'
@@ -27,39 +40,40 @@ jobs:
           cache-dependency-path: Project/requirements.txt
 
       - name: Install dependencies
+        if: steps.guard.outputs.go == 'true'
         run: |
           pip install ruff
           pip install -r Project/requirements.txt
           playwright install --with-deps chromium
 
       - name: Lint
+        if: steps.guard.outputs.go == 'true'
         run: ruff check Project/scrape.py
 
-      - name: Run only at 9AM America/Chicago
-        run: |
-          if [ "$(TZ=America/Chicago date +%H)" != "09" ]; then
-            echo "Skipping duplicate DST/standard cron run."
-            exit 0
-          fi
-
       - name: Run smoke tests
+        if: steps.guard.outputs.go == 'true'
         run: python -m unittest discover -s tests -p 'test_scrape_smoke.py' -v
 
       - name: Set up Node
+        if: steps.guard.outputs.go == 'true'
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af  # v4.1.0
         with:
           node-version: '20'
 
       - name: Run JS tests
+        if: steps.guard.outputs.go == 'true'
         run: node --test tests/js/*.test.js
 
       - name: Run Scraper
+        if: steps.guard.outputs.go == 'true'
         run: python Project/scrape.py
 
       - name: Commit and Push Changes
+        if: steps.guard.outputs.go == 'true'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add Project/scraped_events.json
           git commit -m "Update scraped events [skip ci]" || exit 0
+          git pull --rebase origin main
           git push

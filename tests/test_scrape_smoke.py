@@ -48,6 +48,44 @@ GENERAL_HTML = """
 </div>
 """
 
+# calendars.illinois.edu list-view markup after the July 2026 redesign:
+# non-breaking space in the date header, .entry-heading/h3 title,
+# dl.entry-meta with .entry-time/.entry-location values in <dd>.
+GENERAL_HTML_2026 = """
+<div id="ws-calendar-container">
+  <h2>Sunday, July\xa012, 2026</h2>
+  <ul class="event-entries">
+    <li class="entry with-summary">
+      <div class="entry-pod list-entry">
+        <div class="entry-heading">
+          <h3><a href="/detail/7?eventId=555">Science on Tap</a></h3>
+        </div>
+        <dl class="entry-meta">
+          <div class="entry-time">
+            <dt class="place-off-screen">Time</dt>
+            <dd><svg></svg>1:00 pm - 2:00 pm</dd>
+          </div>
+          <div class="entry-location" title="Riggs Beer Company">
+            <dt class="place-off-screen">Location</dt>
+            <dd><svg></svg>Riggs Beer Company</dd>
+          </div>
+        </dl>
+      </div>
+    </li>
+    <li class="entry">
+      <div class="entry-pod list-entry">
+        <div class="entry-heading">
+          <h3><a href="/detail/7?eventId=556">All Day Exhibit</a></h3>
+        </div>
+        <dl class="entry-meta">
+          <div class="entry-time"><dt>Time</dt><dd>All Day</dd></div>
+        </dl>
+      </div>
+    </li>
+  </ul>
+</div>
+"""
+
 ATHLETICS_HTML = """
 <div class="sidearm-schedule-title"><h2>2025-26 Men's Basketball Schedule</h2></div>
 <ul>
@@ -74,6 +112,31 @@ ATHLETICS_HTML = """
     </div>
   </li>
 </ul>
+"""
+
+# fightingillini.com after the July 2026 Sidearm redesign: s-game-card
+# components, "vs"/"at" stamp, data-test-id hooks for opponent/venue.
+ATHLETICS_HTML_2026 = """
+<h1 class="s-common__header-title">2026 Football Schedule</h1>
+<div class="s-game-card">
+  <span class="s-game-card__header__stamp">vs</span>
+  <a data-test-id="s-game-card-standard__header-team-opponent-link" href="#">UAB</a>
+  <p>
+    <a data-test-id="s-game-card-facility-and-location__game-facility-title-link" href="#">Gies Memorial Stadium</a>
+    <span data-test-id="s-game-card-facility-and-location__standard-location-details">Champaign, Ill.</span>
+  </p>
+  <div class="s-game-card__header__game-score-time">Sep 3 (Thu) 8 PM CT</div>
+</div>
+<div class="s-game-card">
+  <span class="s-game-card__header__stamp">at</span>
+  <a data-test-id="s-game-card-standard__header-team-opponent-link" href="#">Ohio State</a>
+  <div class="s-game-card__header__game-score-time">Sep 26 (Sat) TBA</div>
+</div>
+<div class="s-game-card">
+  <span class="s-game-card__header__stamp">vs</span>
+  <a data-test-id="s-game-card-standard__header-team-opponent-link" href="#">Purdue</a>
+  <div class="s-game-card__header__game-score-time">Oct 3 (Sat) TBA</div>
+</div>
 """
 
 STATEFARM_LIST_HTML = """
@@ -347,6 +410,32 @@ class TestScrapeGeneral(unittest.TestCase):
         self.assertEqual(data, {})
 
 
+class TestScrapeGeneral2026Markup(unittest.TestCase):
+    """The July 2026 site redesign: \xa0 in date headers, entry-heading/entry-meta."""
+
+    def _run(self):
+        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com/list"]), \
+             patch.object(scrape, "safe_request", return_value=MockResponse(GENERAL_HTML_2026)):
+            return scrape.scrape_general()
+
+    def test_parses_new_markup(self):
+        data = self._run()
+        self.assertEqual(len(data), 2)
+
+    def test_timed_event(self):
+        data = self._run()
+        ev = [e for e in data.values() if e["summary"] == "Science on Tap"][0]
+        self.assertIn("2026-07-12T13:00", ev["start"])
+        self.assertIn("T14:00", ev["end"])
+        self.assertEqual(ev["location"], "Riggs Beer Company")
+
+    def test_all_day_event(self):
+        data = self._run()
+        ev = [e for e in data.values() if e["summary"] == "All Day Exhibit"][0]
+        self.assertIn("T00:00", ev["start"])
+        self.assertIn("T23:59", ev["end"])
+
+
 class TestScrapeAthletics(unittest.TestCase):
 
     def _run_athletics(self, html):
@@ -376,6 +465,34 @@ class TestScrapeAthletics(unittest.TestCase):
              patch.object(scrape, "safe_request", return_value=None):
             data = scrape.scrape_athletics()
         self.assertEqual(data, {})
+
+
+class TestScrapeAthletics2026Markup(unittest.TestCase):
+    """The July 2026 Sidearm redesign: s-game-card layout, home games say 'vs'."""
+
+    def _run(self):
+        with patch.object(scrape, "ATHLETIC_TICKET_LINKS", ["https://fightingillini.com/sports/football/schedule"]), \
+             patch.object(scrape, "safe_request", return_value=MockResponse(ATHLETICS_HTML_2026)):
+            return scrape.scrape_athletics()
+
+    def test_home_games_only(self):
+        data = self._run()
+        summaries = [e["summary"] for e in data.values()]
+        self.assertEqual(len(data), 2)
+        self.assertTrue(any("UAB" in s for s in summaries))
+        self.assertFalse(any("Ohio State" in s for s in summaries))  # away game skipped
+
+    def test_time_and_venue(self):
+        data = self._run()
+        uab = [e for e in data.values() if "UAB" in e["summary"]][0]
+        self.assertIn("T20:00", uab["start"])
+        self.assertEqual(uab["location"], "Gies Memorial Stadium, Champaign, Ill.")
+        self.assertIn("Football Game:", uab["summary"])
+
+    def test_tba_time_defaults_to_noon(self):
+        data = self._run()
+        purdue = [e for e in data.values() if "Purdue" in e["summary"]][0]
+        self.assertIn("T12:00", purdue["start"])
 
 
 class TestScrapeYearWrapAround(unittest.TestCase):

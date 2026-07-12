@@ -29,15 +29,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Scraping configuration
-CONFIG = {
-    'max_retries': 3,
-    'retry_delay': 2,  # seconds
-    'request_timeout': 30,
-    'max_pages_per_calendar': 10,
-    'max_events_per_source': 2000,
-    'user_agent': 'Mozilla/5.0 (compatible; ProjectHelix/1.0; +https://github.com/infoshubhjain/Project-Helix)',
-    'rate_limit_delay': 1  # seconds between requests
-}
+MAX_RETRIES = 3
+RETRY_DELAY = 2            # seconds (retry backoff factor)
+REQUEST_TIMEOUT = 30       # seconds
+MAX_PAGES_PER_CALENDAR = 10
+MAX_EVENTS_PER_SOURCE = 2000
+USER_AGENT = 'Mozilla/5.0 (compatible; ProjectHelix/1.0; +https://github.com/infoshubhjain/Project-Helix)'
+RATE_LIMIT_DELAY = 1       # seconds between requests
 
 # Variables & Constants
 last_scrape_stats: Dict[str, Dict[str, Any]] = {}
@@ -87,27 +85,21 @@ ATHLETIC_TICKET_LINKS = [
 def create_robust_session() -> requests.Session:
     """Create a requests session with retry logic and proper headers."""
     session = requests.Session()
-    
-    # Configure retry strategy
-    retry_kwargs = {
-        "total": CONFIG['max_retries'],
-        "status_forcelist": [429, 500, 502, 503, 504],
-        "backoff_factor": CONFIG['retry_delay'],
-        "raise_on_status": False,
-    }
-    try:
-        # urllib3>=2 renamed method_whitelist to allowed_methods.
-        retry_strategy = Retry(allowed_methods=["HEAD", "GET", "OPTIONS"], **retry_kwargs)
-    except TypeError:
-        retry_strategy = Retry(method_whitelist=["HEAD", "GET", "OPTIONS"], **retry_kwargs)
-    
+
+    retry_strategy = Retry(
+        total=MAX_RETRIES,
+        status_forcelist=[429, 500, 502, 503, 504],
+        backoff_factor=RETRY_DELAY,
+        raise_on_status=False,
+        allowed_methods=["HEAD", "GET", "OPTIONS"],
+    )
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
-    
+
     # Set headers
     session.headers.update({
-        "User-Agent": CONFIG['user_agent'],
+        "User-Agent": USER_AGENT,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
         "Accept-Encoding": "gzip, deflate",
@@ -122,45 +114,27 @@ def safe_request(url: str, session: requests.Session, method: str = "GET", **kwa
     """Make a safe HTTP request with error handling and logging."""
     try:
         # Add rate limiting
-        time.sleep(CONFIG['rate_limit_delay'])
-        
-        response = session.request(
-            method, 
-            url, 
-            timeout=CONFIG['request_timeout'],
-            **kwargs
-        )
-        
+        time.sleep(RATE_LIMIT_DELAY)
+
+        response = session.request(method, url, timeout=REQUEST_TIMEOUT, **kwargs)
+
         if response.status_code == 200:
             logger.debug(f"Successfully fetched: {url}")
             return response
-        else:
-            logger.warning(f"HTTP {response.status_code} for {url}")
-            return None
-            
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout for {url}")
-        return None
-    except requests.exceptions.ConnectionError:
-        logger.error(f"Connection error for {url}")
-        return None
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request exception for {url}: {e}")
+        logger.warning(f"HTTP {response.status_code} for {url}")
         return None
     except Exception as e:
-        logger.error(f"Unexpected error for {url}: {e}")
+        logger.error(f"Request failed for {url}: {e}")
         return None
 
 def validate_event(event: Dict[str, Any]) -> bool:
-    """Validate that an event has required fields."""
-    required_fields = ['summary']
-    
-    for field in required_fields:
-        if field not in event or not event[field]:
-            logger.warning(f"Event missing required field '{field}': {event}")
-            return False
-    
+    """An event must have a non-empty summary."""
+    if not event.get('summary'):
+        logger.warning(f"Event missing required field 'summary': {event}")
+        return False
     return True
+
+
 def parse_month_to_number(month_str: str) -> int:
     """Return 1-12 for a month name or abbreviation; returns 1 on unrecognised input."""
     month_str = month_str.strip()
@@ -171,6 +145,35 @@ def parse_month_to_number(month_str: str) -> int:
             continue
     logger.warning("Unrecognised month string: %r — defaulting to 1", month_str)
     return 1
+
+
+def _to_24h(h: int, mer: str) -> int:
+    """12-hour value → 24-hour, given its meridiem ('am'/'pm')."""
+    if mer == "pm" and h != 12: h += 12
+    elif mer == "am" and h == 12: h = 0
+    return h
+
+
+def parse_12h_time(text: str) -> Optional[tuple]:
+    """First '5:30 pm' / '5 pm' / '7 p.m.' clock in text → (hour24, minute), or None."""
+    m = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", text.replace(".", ""), re.IGNORECASE)
+    if not m:
+        return None
+    return _to_24h(int(m.group(1)), m.group(3).lower()), int(m.group(2) or 0)
+
+
+def parse_12h_range(text: str) -> Optional[tuple]:
+    """'5:30 pm - 7:00 pm' (start meridiem may be omitted: '9:00 - 10:00 pm')
+    → ((start_h24, start_m), (end_h24, end_m)), or None."""
+    m = re.search(
+        r"(\d{1,2}):(\d{2})\s*(am|pm)?\s*(?:[-–—]|to)\s*(\d{1,2}):(\d{2})\s*(am|pm)",
+        text.replace(".", ""), re.IGNORECASE,
+    )
+    if not m:
+        return None
+    sh, sm, s_mer, eh, em, e_mer = m.groups()
+    s_mer = (s_mer or e_mer).lower()
+    return (_to_24h(int(sh), s_mer), int(sm)), (_to_24h(int(eh), e_mer.lower()), int(em))
 
 def detect_free_food(event_info):
     """Append 'Free Food 🍕' tag when event mentions food; does not overwrite existing tags."""
@@ -304,7 +307,7 @@ def scrape_general() -> Dict[str, Any]:
         calendar_events = 0
         
         try:
-            while current_url and page_num < CONFIG['max_pages_per_calendar']:
+            while current_url and page_num < MAX_PAGES_PER_CALENDAR:
                 logger.debug(f"Scraping page {page_num + 1}: {current_url}")
                 
                 response = safe_request(current_url, session)
@@ -326,7 +329,8 @@ def scrape_general() -> Dict[str, Any]:
                 headers = container.find_all("h2")
                 
                 for header in headers:
-                    date_str = header.get_text(strip=True)
+                    # The site emits non-breaking spaces ("July\xa012") — normalize them.
+                    date_str = header.get_text(strip=True).replace("\xa0", " ")
                     # Example date_str: "Tuesday, February 10, 2026"
                     
                     # Verify this is actually a date header
@@ -346,9 +350,10 @@ def scrape_general() -> Dict[str, Any]:
                         for entry in event_entries:
                             try:
                                 event_info = {}
-                                
-                                # Title and Link
-                                title_div = entry.find("div", class_="title")
+
+                                # Title and Link — old markup: div.title > a;
+                                # July 2026 redesign: .entry-heading > h3 > a
+                                title_div = entry.find("div", class_="title") or entry.find(class_="entry-heading")
                                 if not title_div: continue
                                 link_tag = title_div.find("a")
                                 if not link_tag: continue
@@ -365,18 +370,20 @@ def scrape_general() -> Dict[str, Any]:
                                     continue
                                 seen_links.add(event_info["htmlLink"])
                                     
-                                # Meta: Time and Location
-                                meta = entry.find("div", class_="event-meta")
+                                # Meta: Time and Location — old markup: div.event-meta with
+                                # li.date / li.location; redesign: dl.entry-meta with
+                                # .entry-time / .entry-location holding the value in a <dd>.
+                                meta = entry.find("div", class_="event-meta") or entry.find(class_="entry-meta")
                                 time_str = "All Day"
                                 location = "TBA"
                                 if meta:
-                                    time_tag = meta.find("li", class_="date")
+                                    time_tag = meta.find("li", class_="date") or meta.find(class_="entry-time")
                                     if time_tag:
-                                        time_str = time_tag.get_text(strip=True)
-                                    
-                                    loc_tag = meta.find("li", class_="location")
+                                        time_str = (time_tag.find("dd") or time_tag).get_text(" ", strip=True)
+
+                                    loc_tag = meta.find("li", class_="location") or meta.find(class_="entry-location")
                                     if loc_tag:
-                                        location = loc_tag.get_text(strip=True)
+                                        location = (loc_tag.find("dd") or loc_tag).get_text(" ", strip=True)
 
                                 event_info["location"] = location
                                 event_info["description"] = "" # List view doesn't have full description
@@ -392,39 +399,18 @@ def scrape_general() -> Dict[str, Any]:
                                 y, mo, d = current_date_obj.year, current_date_obj.month, current_date_obj.day
 
                                 # Handle "All Day"
-                                if "All Day" in time_str:
+                                rng = None if "All Day" in time_str else parse_12h_range(time_str)
+                                single = None if "All Day" in time_str else parse_12h_time(time_str)
+                                if rng:
+                                    (sh, sm), (eh, em) = rng
+                                    start_dt = datetime(y, mo, d, sh, sm, tzinfo=TZ)
+                                    end_dt   = datetime(y, mo, d, eh, em, tzinfo=TZ)
+                                elif single:
+                                    start_dt = datetime(y, mo, d, single[0], single[1], tzinfo=TZ)
+                                    end_dt   = start_dt + timedelta(hours=1)
+                                else:
                                     start_dt = datetime(y, mo, d, 0, 0, tzinfo=TZ)
                                     end_dt   = datetime(y, mo, d, 23, 59, tzinfo=TZ)
-                                else:
-                                    time_str = time_str.replace(".", "").lower()
-
-                                    range_match = re.search(
-                                        r"(\d{1,2}):(\d{2})\s*(am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)",
-                                        time_str,
-                                    )
-                                    if range_match:
-                                        sh, sm, s_mer, eh, em, e_mer = range_match.groups()
-                                        sh, sm, eh, em = int(sh), int(sm), int(eh), int(em)
-                                        if not s_mer:
-                                            s_mer = e_mer
-                                        if s_mer == "pm" and sh != 12: sh += 12
-                                        elif s_mer == "am" and sh == 12: sh = 0
-                                        if e_mer == "pm" and eh != 12: eh += 12
-                                        elif e_mer == "am" and eh == 12: eh = 0
-                                        start_dt = datetime(y, mo, d, sh, sm, tzinfo=TZ)
-                                        end_dt   = datetime(y, mo, d, eh, em, tzinfo=TZ)
-                                    else:
-                                        single_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", time_str)
-                                        if single_match:
-                                            sh, sm, s_mer = single_match.groups()
-                                            sh, sm = int(sh), int(sm)
-                                            if s_mer == "pm" and sh != 12: sh += 12
-                                            elif s_mer == "am" and sh == 12: sh = 0
-                                            start_dt = datetime(y, mo, d, sh, sm, tzinfo=TZ)
-                                            end_dt   = start_dt + timedelta(hours=1)
-                                        else:
-                                            start_dt = datetime(y, mo, d, 0, 0, tzinfo=TZ)
-                                            end_dt   = datetime(y, mo, d, 23, 59, tzinfo=TZ)
 
                                 event_info["start"] = start_dt.isoformat()
                                 event_info["end"]   = end_dt.isoformat() if end_dt else ""
@@ -538,19 +524,10 @@ def scrape_state_farm():
                             start_li = sidebar.find("li", class_="item sidebar_event_starts")
                             start_time_str = start_li.find("span").text.strip() if start_li and start_li.find("span") else ""
                             
-                            if re.search(r"\d{1,2}:\d{2}\s*(am|pm)", start_time_str, re.IGNORECASE):
-                                time_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", start_time_str, re.IGNORECASE)
-                                hour = int(time_match.group(1))
-                                minute = int(time_match.group(2))
-                                meridiem = time_match.group(3).lower()
-                                if meridiem == "pm" and hour != 12:
-                                    hour += 12
-                                elif meridiem == "am" and hour == 12:
-                                    hour = 0
-                                start_dt = datetime(year, parse_month_to_number(month), day, hour, minute, tzinfo=ZoneInfo("America/Chicago"))
-                            else:
-                                # Default to 7PM if time missing but date exists
-                                start_dt = datetime(year, parse_month_to_number(month), day, 19, 0, tzinfo=ZoneInfo("America/Chicago"))
+                            t = parse_12h_time(start_time_str)
+                            # Default to 7PM if time missing but date exists
+                            hour, minute = t if t else (19, 0)
+                            start_dt = datetime(year, parse_month_to_number(month), day, hour, minute, tzinfo=ZoneInfo("America/Chicago"))
                             
                             end_dt = start_dt + timedelta(hours=3)
                             event_info["start"] = start_dt.isoformat()
@@ -593,86 +570,94 @@ def scrape_athletics():
                 continue
             
             soup = BeautifulSoup(response.text, "lxml")
-            event_listings = soup.find_all("li", class_="sidearm-schedule-home-game")
-            print(f"      Found {len(event_listings)} home games")
 
-            title_div = soup.find("div", class_="sidearm-schedule-title")
+            # Sport title — legacy: div.sidearm-schedule-title h2;
+            # July 2026 redesign: h1.s-common__header-title. Both read
+            # e.g. "2026 Football Schedule".
             sport = "Sport"
-            if title_div:
-                h2 = title_div.find("h2")
-                if h2 and h2.text:
-                    # Match "2023-24 Men's Basketball Schedule" or similar
-                    m = re.search(r"[\d-]+\s*(.*)\s*Schedule", h2.text)
-                    if m:
-                        sport = m.group(1).strip()
+            title_el = (soup.select_one("div.sidearm-schedule-title h2")
+                        or soup.find("h1", class_=re.compile("header-title")))
+            if title_el and title_el.get_text(strip=True):
+                m = re.search(r"[\d-]+\s*(.*)\s*Schedule", title_el.get_text(" ", strip=True))
+                if m:
+                    sport = m.group(1).strip()
 
-            for i, listing in enumerate(event_listings):
+            # Normalize both markups to (opponent, date_text, time_text, location).
+            games = []
+
+            # Legacy Sidearm list layout
+            for listing in soup.find_all("li", class_="sidearm-schedule-home-game"):
+                opp_div = listing.find("div", class_="sidearm-schedule-game-opponent-name")
+                opponent = "Opponent"
+                if opp_div:
+                    a_tag = opp_div.find("a")
+                    if a_tag and a_tag.text:
+                        opponent = a_tag.text.strip()
+                    elif opp_div.text:
+                        opponent = opp_div.text.strip()
+
+                date_text = time_text = ""
+                date_div = listing.find("div", class_="sidearm-schedule-game-opponent-date")
+                if date_div:
+                    spans = date_div.find_all("span")
+                    if len(spans) >= 1 and spans[0].text:
+                        date_text = spans[0].text
+                    if len(spans) >= 2 and spans[1].text:
+                        time_text = spans[1].text
+
+                location = "Champaign, Ill."
+                loc_div = listing.find("div", class_="sidearm-schedule-game-location")
+                if loc_div:
+                    loc_spans = loc_div.find_all("span")
+                    if len(loc_spans) >= 2:
+                        location = f"{loc_spans[1].text.strip()}, {loc_spans[0].text.strip()}"
+                    elif len(loc_spans) == 1:
+                        location = loc_spans[0].text.strip()
+                games.append((opponent, date_text, time_text, location))
+
+            # July 2026 Sidearm card layout — home games carry a "vs" stamp.
+            if not games:
+                for card in soup.find_all(class_="s-game-card"):
+                    stamp = card.find(class_="s-game-card__header__stamp")
+                    if not stamp or stamp.get_text(strip=True).lower() != "vs":
+                        continue  # away game
+                    opp = card.find(attrs={"data-test-id": "s-game-card-standard__header-team-opponent-link"})
+                    opponent = opp.get_text(strip=True) if opp else "Opponent"
+                    dt_el = card.find(class_="s-game-card__header__game-score-time")
+                    dt_text = dt_el.get_text(" ", strip=True) if dt_el else ""  # "Sep 3 (Thu) 8 PM CT"
+                    facility = card.find(attrs={"data-test-id": "s-game-card-facility-and-location__game-facility-title-link"})
+                    city = card.find(attrs={"data-test-id": "s-game-card-facility-and-location__standard-location-details"})
+                    location = ", ".join(x.get_text(strip=True) for x in (facility, city) if x) or "Champaign, Ill."
+                    games.append((opponent, dt_text, dt_text, location))
+
+            print(f"      Found {len(games)} home games")
+
+            for i, (opponent, date_text, time_text, location) in enumerate(games):
                 try:
-                    event_info = {"description": "", "tag": "Athletics", "htmlLink": calendar_link}
-                    
-                    opp_div = listing.find("div", class_="sidearm-schedule-game-opponent-name")
-                    opponent = "Opponent"
-                    if opp_div:
-                        a_tag = opp_div.find("a")
-                        if a_tag and a_tag.text:
-                            opponent = a_tag.text.strip()
-                        elif opp_div.text:
-                            opponent = opp_div.text.strip()
-                    
-                    event_info["summary"] = f"{sport} Game: Illinois VS. {opponent}"
+                    event_info = {
+                        "description": "", "tag": "Athletics", "htmlLink": calendar_link,
+                        "summary": f"{sport} Game: Illinois VS. {opponent}",
+                        "location": location, "start": "", "end": "",
+                    }
 
-                    date_div = listing.find("div", class_="sidearm-schedule-game-opponent-date")
-                    event_info["start"] = ""
-                    event_info["end"] = ""
-                    if date_div:
-                        date_spans = date_div.find_all("span")
-                        if len(date_spans) >= 1 and date_spans[0].text:
-                            date_match = re.search(r"(\w+)\s+(\d+)", date_spans[0].text)
-                            if date_match:
-                                month = date_match.group(1)
-                                day = int(date_match.group(2))
-                                month_num = parse_month_to_number(month)
+                    date_match = re.search(r"(\w+)\s+(\d+)", date_text or "")
+                    if date_match:
+                        month_num = parse_month_to_number(date_match.group(1))
+                        day = int(date_match.group(2))
 
-                                _now = datetime.now()
-                                current_month = _now.month
-                                current_year = _now.year
-                                # Simple school year wrap-around logic
-                                if current_month >= 8 and month_num < 8:
-                                    year = current_year + 1
-                                else:
-                                    year = current_year
-                                
-                                start_dt = None
-                                if len(date_spans) >= 2 and date_spans[1].text:
-                                    time_match = re.search(r"(\d{1,2}):?(\d{2})?\s*(am|pm)", date_spans[1].text, re.IGNORECASE)
-                                    if time_match:
-                                        hour = int(time_match.group(1))
-                                        minute = int(time_match.group(2)) if time_match.group(2) else 0
-                                        meridiem = time_match.group(3).lower()
-                                        if meridiem == "pm" and hour != 12:
-                                            hour += 12
-                                        elif meridiem == "am" and hour == 12:
-                                            hour = 0
-                                        start_dt = datetime(year, month_num, day, hour, minute, tzinfo=ZoneInfo("America/Chicago"))
-                                
-                                if start_dt is None:
-                                    start_dt = datetime(year, month_num, day, 12, 0, tzinfo=ZoneInfo("America/Chicago"))
-                                
-                                end_dt = start_dt + timedelta(hours=3)
-                                event_info["start"] = start_dt.isoformat()
-                                event_info["end"] = end_dt.isoformat()
-
-                    loc_div = listing.find("div", class_="sidearm-schedule-game-location")
-                    if loc_div:
-                        loc_spans = loc_div.find_all("span")
-                        if len(loc_spans) >= 2:
-                            event_info["location"] = f"{loc_spans[1].text.strip()}, {loc_spans[0].text.strip()}"
-                        elif len(loc_spans) == 1:
-                            event_info["location"] = loc_spans[0].text.strip()
+                        _now = datetime.now()
+                        # Simple school year wrap-around logic
+                        if _now.month >= 8 and month_num < 8:
+                            year = _now.year + 1
                         else:
-                            event_info["location"] = "Champaign, Ill."
-                    else:
-                        event_info["location"] = "Champaign, Ill."
+                            year = _now.year
+
+                        t = parse_12h_time(time_text or "")
+                        hour, minute = t if t else (12, 0)
+                        start_dt = datetime(year, month_num, day, hour, minute, tzinfo=ZoneInfo("America/Chicago"))
+                        end_dt = start_dt + timedelta(hours=3)
+                        event_info["start"] = start_dt.isoformat()
+                        event_info["end"] = end_dt.isoformat()
 
                     event_info = {k: (v.strip() if isinstance(v, str) else v) for k, v in event_info.items()}
                     event_info = detect_free_food(event_info)
@@ -724,7 +709,7 @@ def scrape_kcpa() -> Dict[str, Any]:
                 event_url = href if href.startswith("http") else "https://krannertcenter.com" + href
 
                 # Parse date from list row — "JUL 16, 2026" or "Th Jul 16, 2026 - 5:30pm CT"
-                date_el = row.find(class_=lambda c: c and "date" in (c if isinstance(c, str) else " ".join(c)).lower())
+                date_el = row.find(class_=re.compile("date", re.I))
                 list_date_text = date_el.get_text(strip=True) if date_el else row.get_text(" ", strip=True)
 
                 # Fetch detail page for time + venue + description
@@ -736,11 +721,11 @@ def scrape_kcpa() -> Dict[str, Any]:
                 summary = (detail.find("h1") or link_el).get_text(strip=True)
 
                 # Description
-                body_el = detail.find(class_=lambda c: c and "body" in (c if isinstance(c, str) else " ".join(c)).lower())
+                body_el = detail.find(class_=re.compile("body", re.I))
                 description = body_el.get_text(" ", strip=True)[:500] if body_el else ""
 
                 # Venue from field--name-field-display-venue
-                venue_el = detail.find(class_=lambda c: c and "field-display-venue" in " ".join(c if isinstance(c, list) else [c]))
+                venue_el = detail.find(class_=re.compile("field-display-venue"))
                 venue = venue_el.get_text(strip=True) if venue_el else "Krannert Center for the Performing Arts"
                 location = f"{venue}, Krannert Center, 500 S Goodwin Ave, Urbana, IL 61801"
 
@@ -748,7 +733,7 @@ def scrape_kcpa() -> Dict[str, Any]:
                 tag = "Performances"
 
                 # Date + time from detail event-date: "Th Jul 16, 2026 - 5:30pm CT"
-                event_date_el = detail.find(class_=lambda c: c and "event-date" in (c if isinstance(c, str) else " ".join(c)))
+                event_date_el = detail.find(class_=re.compile("event-date"))
                 event_date_text = event_date_el.get_text(strip=True) if event_date_el else list_date_text
 
                 # Parse "Th Jul 16, 2026 - 5:30pm CT" or "JUL 16, 2026"
@@ -756,8 +741,6 @@ def scrape_kcpa() -> Dict[str, Any]:
                     r"(?:\w{2,3}\s+)?(\w+)\s+(\d{1,2}),?\s+(\d{4})",
                     event_date_text, re.IGNORECASE,
                 )
-                time_match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", event_date_text, re.IGNORECASE)
-
                 if not date_match:
                     logger.warning("KCPA: could not parse date from %r", event_date_text)
                     continue
@@ -766,14 +749,9 @@ def scrape_kcpa() -> Dict[str, Any]:
                 month_num = parse_month_to_number(month_str)
                 day, year = int(day_str), int(year_str)
 
-                if time_match:
-                    h, m, mer = time_match.groups()
-                    h, m = int(h), int(m)
-                    if mer.lower() == "pm" and h != 12: h += 12
-                    elif mer.lower() == "am" and h == 12: h = 0
-                    start_dt = datetime(year, month_num, day, h, m, tzinfo=TZ)
-                else:
-                    start_dt = datetime(year, month_num, day, 19, 0, tzinfo=TZ)  # default 7 PM
+                t = parse_12h_time(event_date_text)
+                h, m = t if t else (19, 0)  # default 7 PM
+                start_dt = datetime(year, month_num, day, h, m, tzinfo=TZ)
 
                 end_dt = start_dt + timedelta(hours=2)
 
@@ -835,7 +813,7 @@ def scrape_kam() -> Dict[str, Any]:
                 event_url = href if href.startswith("http") else "https://kam.illinois.edu" + href
 
                 # Title is in views-field-title span; fall back to link text stripped of date prefix
-                title_el = row.find(class_=lambda c: c and "views-field-title" in " ".join(c if isinstance(c, list) else [c]))
+                title_el = row.find(class_=re.compile("views-field-title"))
                 if title_el:
                     summary = title_el.get_text(strip=True)
                 else:
@@ -919,17 +897,15 @@ def scrape_music() -> Dict[str, Any]:
             return events
 
         soup = BeautifulSoup(response.text, "lxml")
-        all_cards = soup.find_all(class_=lambda c: c and "event-card" in " ".join(c if isinstance(c, list) else [c]))
+        all_cards = soup.find_all(class_=re.compile("event-card"))
         # Only top-level cards (no ancestor event-card) to avoid duplicates
-        cards = [c for c in all_cards if not c.find_parent(
-            class_=lambda c2: c2 and "event-card" in " ".join(c2 if isinstance(c2, list) else [c2])
-        )]
+        cards = [c for c in all_cards if not c.find_parent(class_=re.compile("event-card"))]
         print(f"   Found {len(cards)} event cards")
 
         seen_hrefs: set = set()
         for card in cards:
             try:
-                link_el = card.find("a", class_=lambda c: c and "linked-title" in " ".join(c if isinstance(c, list) else [c]))
+                link_el = card.find("a", class_=re.compile("linked-title"))
                 if not link_el:
                     continue
                 href = link_el.get("href", "")
@@ -945,11 +921,11 @@ def scrape_music() -> Dict[str, Any]:
                 summary = link_el.get_text(strip=True)
 
                 # Date: <div class="event-card-content__date ...">July 5, 2026</div>
-                date_el = card.find(class_=lambda c: c and "event-card-content__date" in " ".join(c if isinstance(c, list) else [c]))
+                date_el = card.find(class_=re.compile("event-card-content__date"))
                 date_text = date_el.get_text(strip=True) if date_el else ""
 
                 # Time: <div class="event-card-content__time ...">Sunday, 5:30 PM - 7:00 PM</div>
-                time_el = card.find(class_=lambda c: c and "event-card-content__time" in " ".join(c if isinstance(c, list) else [c]))
+                time_el = card.find(class_=re.compile("event-card-content__time"))
                 time_text = time_el.get_text(" ", strip=True) if time_el else ""
 
                 if not date_text:
@@ -969,30 +945,21 @@ def scrape_music() -> Dict[str, Any]:
 
                 # Parse time range "Sunday, 5:30 PM - 7:00 PM" → strip day-of-week first
                 time_text = re.sub(r"^\w+,\s*", "", time_text)
-                range_m = re.search(r"(\d{1,2}):(\d{2})\s*(AM|PM)\s*[-–]\s*(\d{1,2}):(\d{2})\s*(AM|PM)", time_text, re.IGNORECASE)
-                single_m = re.search(r"(\d{1,2}):(\d{2})\s*(AM|PM)", time_text, re.IGNORECASE)
+                rng = parse_12h_range(time_text)
+                single = parse_12h_time(time_text)
 
-                if range_m:
-                    sh, sm, s_mer, eh, em, e_mer = range_m.groups()
-                    sh, sm, eh, em = int(sh), int(sm), int(eh), int(em)
-                    if s_mer.upper() == "PM" and sh != 12: sh += 12
-                    elif s_mer.upper() == "AM" and sh == 12: sh = 0
-                    if e_mer.upper() == "PM" and eh != 12: eh += 12
-                    elif e_mer.upper() == "AM" and eh == 12: eh = 0
+                if rng:
+                    (sh, sm), (eh, em) = rng
                     start_dt = datetime(y, mo, d, sh, sm, tzinfo=TZ)
                     end_dt   = datetime(y, mo, d, eh, em, tzinfo=TZ)
-                elif single_m:
-                    sh, sm, s_mer = single_m.groups()
-                    sh, sm = int(sh), int(sm)
-                    if s_mer.upper() == "PM" and sh != 12: sh += 12
-                    elif s_mer.upper() == "AM" and sh == 12: sh = 0
-                    start_dt = datetime(y, mo, d, sh, sm, tzinfo=TZ)
+                elif single:
+                    start_dt = datetime(y, mo, d, single[0], single[1], tzinfo=TZ)
                     end_dt   = start_dt + timedelta(hours=2)
                 else:
                     start_dt = datetime(y, mo, d, 19, 0, tzinfo=TZ)
                     end_dt   = start_dt + timedelta(hours=2)
 
-                is_free = bool(card.find(class_=lambda c: c and "is-free" in " ".join(c if isinstance(c, list) else [c])))
+                is_free = bool(card.find(class_=re.compile("is-free")))
                 tag = "Free Performances" if is_free else "Performances"
 
                 event_info = {
@@ -1080,19 +1047,9 @@ def scrape_spurlock() -> Dict[str, Any]:
                     card_text, re.IGNORECASE,
                 )
 
-                def _parse_hm(t: str):
-                    t = t.strip().lower().replace(" ", "")
-                    m = re.match(r"(\d{1,2}):(\d{2})(am|pm)", t)
-                    if not m:
-                        return 12, 0
-                    h, mn, mer = int(m.group(1)), int(m.group(2)), m.group(3)
-                    if mer == "pm" and h != 12: h += 12
-                    elif mer == "am" and h == 12: h = 0
-                    return h, mn
-
                 if time_match:
-                    sh, sm = _parse_hm(time_match.group(1))
-                    eh, em = _parse_hm(time_match.group(2))
+                    sh, sm = parse_12h_time(time_match.group(1)) or (12, 0)
+                    eh, em = parse_12h_time(time_match.group(2)) or (12, 0)
                     start_dt = datetime(year, month_num, day, sh, sm, tzinfo=TZ)
                     end_dt   = datetime(year, month_num, day, eh, em, tzinfo=TZ)
                 else:
@@ -1263,21 +1220,12 @@ def scrape_urbana_library() -> Dict[str, Any]:
                 # Infer year: if month is before current month, assume next year
                 year = now.year if month_num >= now.month else now.year + 1
 
-                def _parse_clock(tok: str):
-                    m = re.match(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", tok.strip(), re.IGNORECASE)
-                    if not m:
-                        return None
-                    h, mn, mer = int(m.group(1)), int(m.group(2) or 0), m.group(3).lower()
-                    if mer == "pm" and h != 12: h += 12
-                    elif mer == "am" and h == 12: h = 0
-                    return h, mn
-
                 times = re.findall(r"\d{1,2}(?::\d{2})?\s*(?:am|pm)", time_text, re.IGNORECASE)
                 if times:
-                    st = _parse_clock(times[0])
+                    st = parse_12h_time(times[0])
                     start_dt = datetime(year, month_num, day, st[0], st[1], tzinfo=TZ) if st else datetime(year, month_num, day, 9, 0, tzinfo=TZ)
                     if len(times) > 1:
-                        et = _parse_clock(times[1])
+                        et = parse_12h_time(times[1])
                         end_dt = datetime(year, month_num, day, et[0], et[1], tzinfo=TZ) if et else start_dt + timedelta(hours=1)
                     else:
                         end_dt = start_dt + timedelta(hours=1)
@@ -1355,27 +1303,15 @@ def scrape_gies() -> Dict[str, Any]:
 
                 time_el = row.find(class_="event-time")
                 time_text = time_el.get_text(" ", strip=True) if time_el else ""
-                range_m = re.search(
-                    r"(\d{1,2}):(\d{2})\s*(AM|PM)\s*[-–]\s*(\d{1,2}):(\d{2})\s*(AM|PM)",
-                    time_text, re.IGNORECASE,
-                )
-                single_m = re.search(r"(\d{1,2}):(\d{2})\s*(AM|PM)", time_text, re.IGNORECASE)
+                rng = parse_12h_range(time_text)
+                single = parse_12h_time(time_text)
 
-                if range_m:
-                    sh, sm, s_mer, eh, em, e_mer = range_m.groups()
-                    sh, sm, eh, em = int(sh), int(sm), int(eh), int(em)
-                    if s_mer.upper() == "PM" and sh != 12: sh += 12
-                    elif s_mer.upper() == "AM" and sh == 12: sh = 0
-                    if e_mer.upper() == "PM" and eh != 12: eh += 12
-                    elif e_mer.upper() == "AM" and eh == 12: eh = 0
+                if rng:
+                    (sh, sm), (eh, em) = rng
                     start_dt = datetime(year, month_num, day, sh, sm, tzinfo=TZ)
                     end_dt   = datetime(year, month_num, day, eh, em, tzinfo=TZ)
-                elif single_m:
-                    sh, sm, s_mer = single_m.groups()
-                    sh, sm = int(sh), int(sm)
-                    if s_mer.upper() == "PM" and sh != 12: sh += 12
-                    elif s_mer.upper() == "AM" and sh == 12: sh = 0
-                    start_dt = datetime(year, month_num, day, sh, sm, tzinfo=TZ)
+                elif single:
+                    start_dt = datetime(year, month_num, day, single[0], single[1], tzinfo=TZ)
                     end_dt   = start_dt + timedelta(hours=1)
                 else:
                     start_dt = datetime(year, month_num, day, 0, 0, tzinfo=TZ)
@@ -1468,12 +1404,9 @@ def scrape_cs() -> Dict[str, Any]:
                 month_num = parse_month_to_number(date_m.group(1))
                 day, year = int(date_m.group(2)), int(date_m.group(3))
 
-                time_m = re.search(r"(\d{1,2}):(\d{2})\s*(AM|PM)", time_text, re.IGNORECASE)
-                if time_m:
-                    sh, sm, mer = int(time_m.group(1)), int(time_m.group(2)), time_m.group(3).upper()
-                    if mer == "PM" and sh != 12: sh += 12
-                    elif mer == "AM" and sh == 12: sh = 0
-                    start_dt = datetime(year, month_num, day, sh, sm, tzinfo=TZ)
+                t = parse_12h_time(time_text)
+                if t:
+                    start_dt = datetime(year, month_num, day, t[0], t[1], tzinfo=TZ)
                     end_dt   = start_dt + timedelta(hours=1)
                 else:
                     start_dt = datetime(year, month_num, day, 0, 0, tzinfo=TZ)
@@ -1593,7 +1526,6 @@ def scrape():
     global last_scrape_stats
     combined_json_data = {}
     last_scrape_stats = {}
-    max_events_per_source = CONFIG.get("max_events_per_source", 2000)
 
     for scraper_name, scraper_fn in [
         ("state_farm", scrape_state_farm),
@@ -1613,7 +1545,7 @@ def scrape():
         try:
             scraped = scraper_fn()
             if isinstance(scraped, dict):
-                source_events = cap_events(scraped, max_events_per_source)
+                source_events = cap_events(scraped, MAX_EVENTS_PER_SOURCE)
                 for event in source_events.values():
                     combined_json_data[len(combined_json_data)] = event
             else:
