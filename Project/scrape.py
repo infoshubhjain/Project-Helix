@@ -1,6 +1,6 @@
 #-----------------------IMPORTS & VARIABLES-----------------------#
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import os
 import re
@@ -81,6 +81,17 @@ ATHLETIC_TICKET_LINKS = [
     "https://fightingillini.com/sports/womens-basketball/schedule",
     "https://fightingillini.com/sports/womens-volleyball/schedule"
 ]
+# Sidearm per-sport ICS feeds: (sport name, feed URL, public schedule page)
+ATHLETICS_ICS_FEEDS = [
+    ("Football",           "https://fightingillini.com/calendar.ashx/calendar.ics?sport_id=2",
+     "https://fightingillini.com/sports/football/schedule"),
+    ("Men's Basketball",   "https://fightingillini.com/calendar.ashx/calendar.ics?sport_id=5",
+     "https://fightingillini.com/sports/mens-basketball/schedule"),
+    ("Women's Basketball", "https://fightingillini.com/calendar.ashx/calendar.ics?sport_id=10",
+     "https://fightingillini.com/sports/womens-basketball/schedule"),
+    ("Volleyball",         "https://fightingillini.com/calendar.ashx/calendar.ics?sport_id=17",
+     "https://fightingillini.com/sports/womens-volleyball/schedule"),
+]
 #-----------------------HELPER FUNCTIONS-----------------------#
 def create_robust_session() -> requests.Session:
     """Create a requests session with retry logic and proper headers."""
@@ -160,6 +171,54 @@ def parse_12h_time(text: str) -> Optional[tuple]:
     if not m:
         return None
     return _to_24h(int(m.group(1)), m.group(3).lower()), int(m.group(2) or 0)
+
+
+# ---- Minimal iCalendar parsing (stdlib only) -------------------------------
+# The WebTools and Sidearm feeds are flat, pre-expanded VEVENT lists (no
+# RRULEs), so a ~30-line parser beats a dependency.
+
+def _ics_unescape(s: str) -> str:
+    """Undo RFC 5545 text escaping."""
+    return (s.replace("\\n", " ").replace("\\N", " ")
+             .replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\"))
+
+
+def _parse_ics_events(text: str) -> List[Dict[str, str]]:
+    """Return one {PROPERTY: raw_value} dict per VEVENT (params stripped)."""
+    # Unfold continuation lines (RFC 5545 §3.1)
+    lines: List[str] = []
+    for raw in text.splitlines():
+        if raw[:1] in (" ", "\t") and lines:
+            lines[-1] += raw[1:]
+        else:
+            lines.append(raw)
+
+    events: List[Dict[str, str]] = []
+    cur: Optional[Dict[str, str]] = None
+    for line in lines:
+        if line.startswith("BEGIN:VEVENT"):
+            cur = {}
+        elif line.startswith("END:VEVENT"):
+            if cur is not None:
+                events.append(cur)
+            cur = None
+        elif cur is not None and ":" in line:
+            key, _, value = line.partition(":")
+            cur[key.split(";", 1)[0].upper()] = value
+    return events
+
+
+def _parse_ics_dt(value: str, tz: ZoneInfo) -> Optional[datetime]:
+    """ICS datetime → aware datetime. Handles UTC ('...Z'), naive-local, and date-only."""
+    value = value.strip()
+    try:
+        if value.endswith("Z"):
+            return datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc).astimezone(tz)
+        if "T" in value:
+            return datetime.strptime(value, "%Y%m%dT%H%M%S").replace(tzinfo=tz)
+        return datetime.strptime(value, "%Y%m%d").replace(tzinfo=tz)
+    except ValueError:
+        return None
 
 
 def parse_12h_range(text: str) -> Optional[tuple]:
@@ -288,18 +347,114 @@ def cap_events(events: Dict[Any, Dict[str, Any]], max_events: int) -> Dict[Any, 
 #-----------------------SCRAPERS-----------------------#
 # Individual Scrapers
 def scrape_general() -> Dict[str, Any]:
-    """Scrape general university calendars with enhanced error handling."""
+    """General university calendars — iCal feed first (a stable, published
+    contract), falling back to HTML scraping only if the feeds go dark.
+    The July 2026 site redesign broke the HTML path for four days; feeds
+    don't churn like markup does."""
+    events, dead_links = _scrape_general_feed()
+    if not events:
+        logger.warning("General iCal feeds yielded no events — falling back to HTML scraping.")
+        return _scrape_general_html()
+    if dead_links:
+        # A broken feed shouldn't drop its calendar — HTML-scrape just those.
+        logger.warning("General: %d feed(s) unusable, HTML-scraping: %s", len(dead_links), dead_links)
+        for ev in _scrape_general_html(dead_links).values():
+            events[len(events)] = ev
+    return events
+
+
+def _scrape_general_feed() -> tuple:
+    """Read each calendar's whole-calendar ICS feed (icalGmail/<id>.ics).
+
+    Returns (events, dead_links) — dead_links are calendars whose feed was
+    unreachable or not a calendar at all (a valid-but-empty feed is normal:
+    several calendars are dormant, and cross-calendar UID dedup can leave a
+    later calendar with nothing new to add)."""
+    session = create_robust_session()
+    events: Dict[int, Any] = {}
+    dead_links: List[str] = []
+    seen_uids: set = set()
+    TZ = ZoneInfo("America/Chicago")
+    cutoff = datetime.now(tz=TZ) - timedelta(days=1)  # feeds include history; keep volume sane
+
+    for base_link in GENERAL_CALENDAR_LINKS:
+        cal_id = base_link.rstrip("/").rsplit("/", 1)[-1]
+        if not cal_id.isdigit():
+            continue
+        response = safe_request(f"https://calendars.illinois.edu/icalGmail/{cal_id}.ics", session)
+        if not response or "BEGIN:VCALENDAR" not in response.text:
+            logger.warning("General: unusable ICS feed for calendar %s — will HTML-scrape it", cal_id)
+            dead_links.append(base_link)
+            continue
+        if "BEGIN:VEVENT" not in response.text:
+            logger.info("General: calendar %s feed is valid but empty", cal_id)
+            continue
+
+        count = 0
+        for ve in _parse_ics_events(response.text):
+            try:
+                summary = _ics_unescape(ve.get("SUMMARY", "")).strip()
+                start_raw = ve.get("DTSTART", "")
+                start_dt = _parse_ics_dt(start_raw, TZ)
+                if not summary or not start_dt:
+                    continue
+
+                end_dt = _parse_ics_dt(ve.get("DTEND", ""), TZ)
+                if "T" not in start_raw:  # date-only → all-day
+                    end_dt = start_dt.replace(hour=23, minute=59)
+                elif not end_dt or end_dt <= start_dt:
+                    end_dt = start_dt + timedelta(hours=1)
+                if end_dt < cutoff:
+                    continue
+
+                # UID is unique per occurrence and shared across calendars,
+                # so it also dedupes events listed on several feeds.
+                uid = ve.get("UID") or f"{summary}|{start_raw}"
+                if uid in seen_uids:
+                    continue
+                seen_uids.add(uid)
+
+                description = _ics_unescape(ve.get("DESCRIPTION", "")).strip()[:500]
+                location = _ics_unescape(ve.get("LOCATION", "")).strip() or "TBA"
+                categories = _ics_unescape(ve.get("CATEGORIES", ""))
+
+                event_info = {
+                    "summary": summary,
+                    "description": description,
+                    "location": location,
+                    "htmlLink": ve.get("URL", "").replace("http://", "https://", 1)
+                                or f"https://calendars.illinois.edu/list/{cal_id}",
+                    "tag": classify_event(summary, f"{description} {categories}", location),
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                }
+                event_info = detect_free_food(event_info)
+                if validate_event(event_info):
+                    events[len(events)] = event_info
+                    count += 1
+            except Exception as e:
+                logger.error("General feed: error parsing VEVENT: %s", e)
+                continue
+        logger.info("General feed: %s events from calendar %s", count, cal_id)
+
+    return events, dead_links
+
+
+def _scrape_general_html(links: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Scrape general university calendars from their HTML list pages."""
     session = create_robust_session()
     events: Dict[int, Any] = {}
     seen_links: set = set()   # deduplicate across calendar pages
     local_count = 0
     successful_calendars = 0
     failed_calendars = 0
-    
-    logger.info(f"Starting to scrape {len(GENERAL_CALENDAR_LINKS)} general calendars")
-    
-    for i, base_calendar_link in enumerate(GENERAL_CALENDAR_LINKS):
-        logger.info(f"Processing calendar {i+1}/{len(GENERAL_CALENDAR_LINKS)}: {base_calendar_link}")
+
+    if links is None:
+        links = GENERAL_CALENDAR_LINKS
+    logger.info(f"Starting to scrape {len(links)} general calendars")
+
+    for i, base_calendar_link in enumerate(links):
+        logger.info(f"Processing calendar {i+1}/{len(links)}: {base_calendar_link}")
         
         # Ensure we use list view and show recurring events
         current_url = f"{base_calendar_link}?listType=list&isRecurring=true"
@@ -559,6 +714,67 @@ def scrape_state_farm():
     return events
 
 def scrape_athletics():
+    """Home games for the four ticketed sports — Sidearm ICS feed first,
+    HTML schedule pages as fallback (the markup broke silently in July 2026;
+    the feed is a published contract)."""
+    events = _scrape_athletics_feed()
+    if events:
+        return events
+    logger.warning("Athletics ICS feeds yielded no events — falling back to HTML scraping.")
+    return _scrape_athletics_html()
+
+
+def _scrape_athletics_feed() -> Dict[str, Any]:
+    session = create_robust_session()
+    events: Dict[int, Any] = {}
+    TZ = ZoneInfo("America/Chicago")
+
+    print("\n🔍 Scraping Athletics ICS feeds...")
+    for sport, feed_url, schedule_url in ATHLETICS_ICS_FEEDS:
+        response = safe_request(feed_url, session)
+        if not response or "BEGIN:VEVENT" not in response.text:
+            logger.warning("Athletics: no usable ICS feed for %s", sport)
+            continue
+
+        count = 0
+        for ve in _parse_ics_events(response.text):
+            try:
+                summary = _ics_unescape(ve.get("SUMMARY", "")).strip()
+                # Past games carry a result prefix like "[W] " — strip it.
+                summary = re.sub(r"^\[\w\]\s*", "", summary)
+                # Home games say "vs"; away games say "at".
+                m = re.search(r"\bvs\.?\s+(.+)", summary)
+                if not m:
+                    continue
+                opponent = re.split(r"\s+[-–—|]\s+", m.group(1))[0].strip()
+
+                start_dt = _parse_ics_dt(ve.get("DTSTART", ""), TZ)
+                if not start_dt:
+                    continue
+                end_dt = _parse_ics_dt(ve.get("DTEND", ""), TZ) or start_dt + timedelta(hours=3)
+
+                event_info = {
+                    "summary": f"{sport} Game: Illinois VS. {opponent}",
+                    "description": _ics_unescape(ve.get("DESCRIPTION", "")).strip()[:500],
+                    "location": _ics_unescape(ve.get("LOCATION", "")).strip() or "Champaign, Ill.",
+                    "tag": "Athletics",
+                    "htmlLink": schedule_url,
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                }
+                event_info = detect_free_food(event_info)
+                if validate_event(event_info):
+                    events[len(events)] = event_info
+                    count += 1
+            except Exception as e:
+                logger.error("Athletics feed: error parsing VEVENT: %s", e)
+                continue
+        print(f"   ✅ {sport}: {count} home games from feed")
+
+    return events
+
+
+def _scrape_athletics_html():
     session = create_robust_session()
     events: Dict[int, Any] = {}
     local_count = 0

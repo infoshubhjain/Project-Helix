@@ -38,9 +38,10 @@ GitHub Actions (daily cron) → scrape.py → Project/scraped_events.json (commi
 
 `scrape()` runs **12 sources** in sequence, each isolated in try/except so one failure never kills the run:
 
-- `scrape_general()` — BeautifulSoup over 14 `calendars.illinois.edu` calendars
+- `scrape_general()` — **feed-first**: per-calendar iCal feeds (`calendars.illinois.edu/icalGmail/<id>.ics`), falling back to HTML scraping of the list pages only if the feeds go dark. Feeds are stable contracts; the HTML broke in July 2026.
 - `scrape_state_farm()` — Playwright headless browser (statefarmcenter.com); has an SSRF guard rejecting off-domain event URLs
-- `scrape_athletics()` — 4 fightingillini.com schedule pages
+- `scrape_athletics()` — **feed-first**: Sidearm per-sport ICS feeds (`fightingillini.com/calendar.ashx/calendar.ics?sport_id=N`), HTML schedule pages as fallback. Home games = "vs" in the summary.
+- `_parse_ics_events()` / `_parse_ics_dt()` — minimal stdlib iCal parser both feed paths share (feeds are flat pre-expanded VEVENT lists, no RRULEs)
 - `scrape_kcpa()`, `scrape_kam()`, `scrape_music()`, `scrape_spurlock()`, `scrape_parkland()`, `scrape_urbana_library()`, `scrape_gies()`, `scrape_cs()` — per-venue HTML scrapers
 - `scrape_food_resources()` — not a scraper: expands the curated recurrence table in `Project/food_resources.py` (soup kitchens, pantries, campus meal programs) into dated occurrences; academic-only programs are gated to the `ACADEMIC_TERMS` dates there, which need **yearly manual updates**
 

@@ -48,6 +48,65 @@ GENERAL_HTML = """
 </div>
 """
 
+# Whole-calendar iCal feed (calendars.illinois.edu/icalGmail/<id>.ics) —
+# the primary general source; HTML scraping is now only a fallback.
+GENERAL_ICS = """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+DTSTART;VALUE=DATE-TIME:20990712T130000
+DTEND;VALUE=DATE-TIME:20990712T140000
+SUMMARY:Science on Tap\\, with Friends
+DESCRIPTION:A talk about beer\\nand science.
+LOCATION:Riggs Beer Company
+CATEGORIES:Exhibition
+URL:http://calendars.illinois.edu/detail/7?eventId=1
+UID:1-1@illinois.edu
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20990713
+DTEND;VALUE=DATE:20990714
+SUMMARY:All Day Exhibit
+UID:2-1@illinois.edu
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE-TIME:20100101T100000
+DTEND;VALUE=DATE-TIME:20100101T110000
+SUMMARY:Ancient Past Event
+UID:3-1@illinois.edu
+END:VEVENT
+END:VCALENDAR
+"""
+
+# Sidearm athletics ICS feed (fightingillini.com/calendar.ashx) — UTC times,
+# "vs" = home / "at" = away, past games prefixed with a result like "[W] ".
+ATHLETICS_ICS = """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:vcal_1-admin.fightingillini.com
+DTSTART:20990904T010000Z
+DTEND:20990904T040000Z
+LOCATION:Champaign\\, Ill., Gies Memorial Stadium
+SUMMARY:Illini Football vs UAB
+DESCRIPTION:Illini Football vs UAB\\nTV: BTN
+URL:https://admin.fightingillini.com/calendar.aspx?game_id=1
+END:VEVENT
+BEGIN:VEVENT
+UID:vcal_2-admin.fightingillini.com
+DTSTART:20990926T170000Z
+DTEND:20990926T200000Z
+LOCATION:Columbus\\, Ohio
+SUMMARY:Illini Football at Ohio State
+END:VEVENT
+BEGIN:VEVENT
+UID:vcal_3-admin.fightingillini.com
+DTSTART:20990912T183000Z
+DTEND:20990912T213000Z
+LOCATION:Champaign\\, Ill., Gies Memorial Stadium
+SUMMARY:Illini Football vs Duke - Hall of Fame Weekend | FamILLy Day
+END:VEVENT
+END:VCALENDAR
+"""
+
 # calendars.illinois.edu list-view markup after the July 2026 redesign:
 # non-breaking space in the date header, .entry-heading/h3 title,
 # dl.entry-meta with .entry-time/.entry-location values in <dd>.
@@ -348,6 +407,97 @@ class TestScrapeCS(unittest.TestCase):
         ev = [e for e in data.values() if "Without Location" in e["summary"]][0]
         self.assertTrue(ev["location"])  # non-empty default
         self.assertNotEqual(ev["location"], "")
+
+
+class TestScrapeGeneralFeed(unittest.TestCase):
+    """Primary path: whole-calendar ICS feed."""
+
+    def _run(self):
+        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://calendars.illinois.edu/list/7"]), \
+             patch.object(scrape, "safe_request", return_value=MockResponse(GENERAL_ICS)):
+            return scrape.scrape_general()
+
+    def test_timed_event_with_escapes(self):
+        data = self._run()
+        ev = [e for e in data.values() if "Science on Tap" in e["summary"]][0]
+        self.assertEqual(ev["summary"], "Science on Tap, with Friends")  # \\, unescaped
+        self.assertIn("2099-07-12T13:00", ev["start"])
+        self.assertIn("T14:00", ev["end"])
+        self.assertEqual(ev["location"], "Riggs Beer Company")
+        self.assertIn("beer and science", ev["description"])            # \\n → space
+        self.assertTrue(ev["htmlLink"].startswith("https://"))          # http upgraded
+        self.assertEqual(ev["tag"], "Arts")                             # CATEGORIES feeds classify
+
+    def test_all_day_event(self):
+        data = self._run()
+        ev = [e for e in data.values() if e["summary"] == "All Day Exhibit"][0]
+        self.assertIn("T00:00", ev["start"])
+        self.assertIn("T23:59", ev["end"])
+
+    def test_ancient_past_events_skipped(self):
+        data = self._run()
+        self.assertFalse(any("Ancient" in e["summary"] for e in data.values()))
+
+    def test_uid_dedupes_across_calendars(self):
+        with patch.object(scrape, "GENERAL_CALENDAR_LINKS",
+                          ["https://calendars.illinois.edu/list/7",
+                           "https://calendars.illinois.edu/list/557"]), \
+             patch.object(scrape, "safe_request", return_value=MockResponse(GENERAL_ICS)):
+            data = scrape.scrape_general()
+        # Same feed served for both calendars — UIDs collapse the duplicates.
+        self.assertEqual(len(data), 2)
+
+    def test_falls_back_to_html_when_feed_dead(self):
+        def fake(url, session, **kw):
+            if url.endswith(".ics"):
+                return None  # feed outage
+            return MockResponse(GENERAL_HTML)
+        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://calendars.illinois.edu/list/7"]), \
+             patch.object(scrape, "safe_request", side_effect=fake):
+            data = scrape.scrape_general()
+        self.assertEqual(len(data), 2)  # HTML fallback parsed the list page
+
+    def test_dead_feed_falls_back_per_calendar(self):
+        # Feed OK for calendar 7, dead for 557 — 557 alone gets HTML-scraped.
+        def fake(url, session, **kw):
+            if url.endswith("/7.ics"):
+                return MockResponse(GENERAL_ICS)
+            if url.endswith(".ics"):
+                return None
+            return MockResponse(GENERAL_HTML)
+        with patch.object(scrape, "GENERAL_CALENDAR_LINKS",
+                          ["https://calendars.illinois.edu/list/7",
+                           "https://calendars.illinois.edu/list/557"]), \
+             patch.object(scrape, "safe_request", side_effect=fake):
+            data = scrape.scrape_general()
+        summaries = {e["summary"] for e in data.values()}
+        self.assertIn("All Day Exhibit", summaries)  # from the working feed
+        self.assertIn("Mock Event", summaries)       # from the HTML fallback
+
+
+class TestScrapeAthleticsFeed(unittest.TestCase):
+    """Primary path: Sidearm per-sport ICS feed."""
+
+    def _run(self):
+        with patch.object(scrape, "ATHLETICS_ICS_FEEDS",
+                          [("Football", "https://fightingillini.com/calendar.ashx/calendar.ics?sport_id=2",
+                            "https://fightingillini.com/sports/football/schedule")]), \
+             patch.object(scrape, "safe_request", return_value=MockResponse(ATHLETICS_ICS)):
+            return scrape.scrape_athletics()
+
+    def test_home_games_only(self):
+        data = self._run()
+        summaries = [e["summary"] for e in data.values()]
+        self.assertEqual(len(data), 2)
+        self.assertFalse(any("Ohio State" in s for s in summaries))  # away skipped
+
+    def test_utc_converted_and_suffix_stripped(self):
+        data = self._run()
+        uab = [e for e in data.values() if "UAB" in e["summary"]][0]
+        self.assertIn("2099-09-03T20:00", uab["start"])  # 0100Z → 8 PM Chicago (CDT)
+        duke = [e for e in data.values() if "Duke" in e["summary"]][0]
+        self.assertEqual(duke["summary"], "Football Game: Illinois VS. Duke")  # promo suffix stripped
+        self.assertEqual(uab["htmlLink"], "https://fightingillini.com/sports/football/schedule")
 
 
 class TestScrapeGeneral(unittest.TestCase):
