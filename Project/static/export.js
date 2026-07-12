@@ -62,7 +62,7 @@ function createICalEvent(event) {
 
   const description = escapeICalText(event.description || '');
   const location = escapeICalText(event.location || '');
-  const url = event.htmlLink || '';
+  const url = (event.htmlLink || '').replace(/[\r\n]/g, ''); // no CRLF → no iCal property injection
   if (description) lines.push(`DESCRIPTION:${description}`);
   if (location) lines.push(`LOCATION:${location}`);
   if (url) lines.push(`URL:${url}`);

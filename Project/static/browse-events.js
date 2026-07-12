@@ -69,16 +69,6 @@ document.addEventListener("DOMContentLoaded", function () {
     container.innerHTML = html;
   }
 
-  function showLoadingSpinner() {
-    const spinner = document.createElement('div');
-    spinner.className = 'loading-spinner';
-    spinner.innerHTML = `
-      <div class="spinner"></div>
-      <p>Loading more events...</p>
-    `;
-    return spinner;
-  }
-
   function observeLoadMoreTrigger() {
     const loadMoreBtn = document.getElementById('load-more-btn');
     if (loadMoreBtn && intersectionObserver) {
@@ -97,31 +87,8 @@ document.addEventListener("DOMContentLoaded", function () {
   async function loadEvents() {
     showSkeleton(browseContainer);
     try {
-      // Fetch from static JSON file instead of Firebase
-      // The file is committed to the repo by the scraper
-      const candidateUrls = [
-        new URL('Project/scraped_events.json', window.location.href).toString(),
-        new URL('./Project/scraped_events.json', window.location.href).toString(),
-      ];
-
-      let response = null;
-      let lastError = null;
-      for (const url of candidateUrls) {
-        try {
-          response = await fetch(url, { cache: 'no-store' });
-          if (response && response.ok) {
-            break;
-          }
-        } catch (e) {
-          lastError = e;
-          response = null;
-        }
-      }
-
-      if (!response) {
-        throw lastError || new Error('Failed to fetch events JSON');
-      }
-
+      // The file is committed to the repo by the scraper.
+      const response = await fetch('Project/scraped_events.json', { cache: 'no-store' });
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -172,6 +139,8 @@ document.addEventListener("DOMContentLoaded", function () {
     event.location = (event.location || event.venue || 'Location TBA').toString().trim();
     event.tag = (event.tag || event.category || 'General').toString().trim();
     event.htmlLink = (event.htmlLink || event.link || event.url || '').toString().trim();
+    // Trust boundary: scraped links must be http(s) — blocks javascript:/data: URIs
+    if (event.htmlLink && !/^https?:\/\//i.test(event.htmlLink)) event.htmlLink = '';
     event.description = normalizeDescription(
       event.description || event.desc || event.event_description || event.details || ''
     );
@@ -639,14 +608,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Calculate how many events to show
     const endIndex = Math.min(displayedCount + EVENTS_PER_PAGE, events.length);
-    
-    // Show loading spinner for append operations
-    if (append && isLoading) {
-      const existingSpinner = browseContainer.querySelector('.loading-spinner');
-      if (!existingSpinner) {
-        browseContainer.appendChild(showLoadingSpinner());
-      }
-    }
 
     // Create cards for the next batch of events
     const fragment = document.createDocumentFragment();
@@ -654,13 +615,7 @@ document.addEventListener("DOMContentLoaded", function () {
       let card = createEventCard(events[i]);
       fragment.appendChild(card);
     }
-    
-    // Remove loading spinner if exists
-    const spinner = browseContainer.querySelector('.loading-spinner');
-    if (spinner) {
-      spinner.remove();
-    }
-    
+
     browseContainer.appendChild(fragment);
 
     // Update displayed count
@@ -854,13 +809,12 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       };
 
-      // Call the Flask backend to add event
       const response = await window.calendarAPI.addEvent(eventData)
       if (response) {
         showToast('Event Added', `"${event.summary}" was added to your Google Calendar`, 'success');
 
         // Refresh the calendar iframes to show the new event
-        refreshCalendars();
+        window.calendarAPI.refresh();
       } else {
         showToast('Failed', 'Could not add event to calendar', 'error');
       }
@@ -869,23 +823,6 @@ document.addEventListener("DOMContentLoaded", function () {
       console.error('Error adding event to calendar:', error);
       showToast('Error', 'Failed to add event to calendar. Please try again.', 'error');
     }
-  }
-
-  // ========== Refresh Calendar Iframes ==========
-  function refreshCalendars() {
-    // Refresh main calendar iframe
-    const mainIframe = document.getElementById('calendar-iframe');
-    if (mainIframe && mainIframe.src) {
-      mainIframe.src = mainIframe.src; // Force reload by resetting src
-    }
-
-    // Refresh today's agenda iframe
-    const agendaIframe = document.getElementById('today-agenda-iframe');
-    if (agendaIframe && agendaIframe.src) {
-      agendaIframe.src = agendaIframe.src; // Force reload by resetting src
-    }
-
-    console.log('📅 Calendars refreshed');
   }
 
   // ========== Enhanced STEP 7: Search Function ==========

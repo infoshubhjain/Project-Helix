@@ -7,7 +7,7 @@ Thank you for your interest in contributing.
 1. **Fork** the repository and clone your fork.
 2. **Create a branch** for your change: `git checkout -b feature/your-feature` or `fix/your-fix`.
 3. **Make your changes** and keep commits focused and clear.
-4. **Run the app** to verify: `./run.sh` and optionally `python3 test_app.py`.
+4. **Verify**: run `make test`, and open `index.html` in a browser (or `python3 -m http.server 8080`).
 5. **Push** to your fork and open a **Pull Request** against `main`.
 
 ## Code style

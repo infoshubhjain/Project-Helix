@@ -220,14 +220,16 @@ function silentlyRefreshToken() {
 
 // ── Button handlers ─────────────────────────────────────────────────────────
 
-function handleRefreshClick() {
-    console.log('🔄 Manually refreshing calendars…');
+function refreshCalendarIframes() {
     const mainIframe = document.getElementById('calendar-iframe');
     if (mainIframe && mainIframe.src) mainIframe.src = mainIframe.src;
 
     const agendaIframe = document.getElementById('today-agenda-iframe');
     if (agendaIframe && agendaIframe.src) agendaIframe.src = agendaIframe.src;
+}
 
+function handleRefreshClick() {
+    refreshCalendarIframes();
     showNotification('Calendars refreshed!', 'success');
 }
 
@@ -351,56 +353,10 @@ function onCalendarDisconnected() {
         todayIframe.src = 'https://calendar.google.com/calendar/embed?mode=AGENDA&showTitle=0&showNav=0&showDate=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&height=400&wkst=1&ctz=America/Chicago&src=en.usa%23holiday%40group.v.calendar.google.com';
     }
 
-    const upcomingEvents = document.getElementById('upcoming-events');
-    if (upcomingEvents) {
-        upcomingEvents.innerHTML = '<p class="no-events-text">Connect your calendar to see upcoming events</p>';
-    }
-
     showNotification('Disconnected from Google Calendar', 'info');
 }
 
-// showEventDetails for Google Calendar events (not scraped events)
-function showEventDetails(event) {
-    const modal = document.getElementById('detail-modal');
-    if (!modal) return;
-
-    const start     = event.start.dateTime || event.start.date;
-    const startDate = new Date(start);
-
-    const titleEl = document.getElementById('detail-title');
-    const dateEl  = document.getElementById('detail-date');
-    const timeEl  = document.getElementById('detail-time');
-    const locEl   = document.getElementById('detail-location');
-    const descEl  = document.getElementById('detail-description');
-
-    if (titleEl) titleEl.textContent = event.summary || 'Untitled Event';
-    if (dateEl)  dateEl.textContent  = startDate.toLocaleDateString();
-    if (timeEl)  timeEl.textContent  = event.start.dateTime
-        ? startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : 'All day';
-    if (locEl)   locEl.textContent   = event.location || 'No location';
-    if (descEl)  descEl.textContent  = event.description || 'No description';
-
-    const link = document.getElementById('detail-link');
-    if (link) {
-        if (event.htmlLink) {
-            link.href          = event.htmlLink;
-            link.style.display = 'inline-block';
-        } else {
-            link.style.display = 'none';
-        }
-    }
-
-    modal.style.display = 'flex';
-}
-
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
 
 function showNotification(message, type = 'info') {
     if (window.showToast) {
@@ -437,4 +393,5 @@ window.calendarAPI = {
             resource: eventDetails,
         });
     },
+    refresh: refreshCalendarIframes,
 };

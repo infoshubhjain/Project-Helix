@@ -113,11 +113,6 @@ async function handleSaveEvent() {
 
       showToast("Event Added", "Event successfully added to your Google Calendar", "success");
 
-      // Refresh the events display
-      if (typeof loadUserEvents === 'function') {
-        await loadUserEvents();
-      }
-
       // Close modal and clear form
       document.getElementById("event-modal").style.display = "none";
       clearEventForm();
