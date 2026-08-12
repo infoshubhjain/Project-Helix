@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Smoke + unit tests for scrape.py — no live HTTP."""
+
 import os
 import sys
 import unittest
@@ -316,8 +317,8 @@ CS_HTML = """
 # Tests
 # ---------------------------------------------------------------------------
 
-class TestScrapeParkland(unittest.TestCase):
 
+class TestScrapeParkland(unittest.TestCase):
     def _run(self):
         resp = MagicMock()
         resp.json.return_value = PARKLAND_JSON
@@ -328,7 +329,9 @@ class TestScrapeParkland(unittest.TestCase):
     def test_skips_cancelled(self):
         data = self._run()
         titles = {e["summary"] for e in data.values()}
-        self.assertIn("One World, One Sky: Big Bird's Adventure", titles)  # entity unescaped
+        self.assertIn(
+            "One World, One Sky: Big Bird's Adventure", titles
+        )  # entity unescaped
         self.assertNotIn("Cancelled Show", titles)
 
     def test_strips_html_description(self):
@@ -350,9 +353,10 @@ class TestScrapeParkland(unittest.TestCase):
 
 
 class TestScrapeUrbanaLibrary(unittest.TestCase):
-
     def _run(self):
-        with patch.object(scrape, "safe_request", return_value=MockResponse(URBANA_HTML)):
+        with patch.object(
+            scrape, "safe_request", return_value=MockResponse(URBANA_HTML)
+        ):
             return scrape.scrape_urbana_library()
 
     def test_parses_events(self):
@@ -361,7 +365,9 @@ class TestScrapeUrbanaLibrary(unittest.TestCase):
 
     def test_time_range(self):
         data = self._run()
-        ev = [e for e in data.values() if e["summary"] == "Gardening for Butterflies"][0]
+        ev = [e for e in data.values() if e["summary"] == "Gardening for Butterflies"][
+            0
+        ]
         self.assertIn("T13:00", ev["start"])
         self.assertIn("T14:00", ev["end"])
 
@@ -373,7 +379,6 @@ class TestScrapeUrbanaLibrary(unittest.TestCase):
 
 
 class TestScrapeGies(unittest.TestCase):
-
     def _run(self):
         with patch.object(scrape, "safe_request", return_value=MockResponse(GIES_HTML)):
             return scrape.scrape_gies()
@@ -384,14 +389,18 @@ class TestScrapeGies(unittest.TestCase):
         self.assertIn("2026-07-07T18:00", ev["start"])
         self.assertIn("2026-07-07T19:00", ev["end"])
 
-    def test_coffee_chat_gets_free_food(self):
+    def test_coffee_chat_is_not_free_food(self):
+        """A "Coffee Chat" is a conversation format, not a promise of coffee.
+
+        Bare food nouns no longer tag on their own — "Coffee & Conversation"
+        (the giveaway idiom) does, "Coffee Chat" deliberately does not.
+        """
         data = self._run()
         ev = [e for e in data.values() if "Coffee" in e["summary"]][0]
-        self.assertIn("Free Food", ev["tag"])
+        self.assertNotIn("Free Food", ev["tag"])
 
 
 class TestScrapeCS(unittest.TestCase):
-
     def _run(self):
         with patch.object(scrape, "safe_request", return_value=MockResponse(CS_HTML)):
             return scrape.scrape_cs()
@@ -413,8 +422,16 @@ class TestScrapeGeneralFeed(unittest.TestCase):
     """Primary path: whole-calendar ICS feed."""
 
     def _run(self):
-        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://calendars.illinois.edu/list/7"]), \
-             patch.object(scrape, "safe_request", return_value=MockResponse(GENERAL_ICS)):
+        with (
+            patch.object(
+                scrape,
+                "GENERAL_CALENDAR_LINKS",
+                ["https://calendars.illinois.edu/list/7"],
+            ),
+            patch.object(
+                scrape, "safe_request", return_value=MockResponse(GENERAL_ICS)
+            ),
+        ):
             return scrape.scrape_general()
 
     def test_timed_event_with_escapes(self):
@@ -424,9 +441,9 @@ class TestScrapeGeneralFeed(unittest.TestCase):
         self.assertIn("2099-07-12T13:00", ev["start"])
         self.assertIn("T14:00", ev["end"])
         self.assertEqual(ev["location"], "Riggs Beer Company")
-        self.assertIn("beer and science", ev["description"])            # \\n → space
-        self.assertTrue(ev["htmlLink"].startswith("https://"))          # http upgraded
-        self.assertEqual(ev["tag"], "Arts")                             # CATEGORIES feeds classify
+        self.assertIn("beer and science", ev["description"])  # \\n → space
+        self.assertTrue(ev["htmlLink"].startswith("https://"))  # http upgraded
+        self.assertEqual(ev["tag"], "Arts")  # CATEGORIES feeds classify
 
     def test_all_day_event(self):
         data = self._run()
@@ -439,10 +456,19 @@ class TestScrapeGeneralFeed(unittest.TestCase):
         self.assertFalse(any("Ancient" in e["summary"] for e in data.values()))
 
     def test_uid_dedupes_across_calendars(self):
-        with patch.object(scrape, "GENERAL_CALENDAR_LINKS",
-                          ["https://calendars.illinois.edu/list/7",
-                           "https://calendars.illinois.edu/list/557"]), \
-             patch.object(scrape, "safe_request", return_value=MockResponse(GENERAL_ICS)):
+        with (
+            patch.object(
+                scrape,
+                "GENERAL_CALENDAR_LINKS",
+                [
+                    "https://calendars.illinois.edu/list/7",
+                    "https://calendars.illinois.edu/list/557",
+                ],
+            ),
+            patch.object(
+                scrape, "safe_request", return_value=MockResponse(GENERAL_ICS)
+            ),
+        ):
             data = scrape.scrape_general()
         # Same feed served for both calendars — UIDs collapse the duplicates.
         self.assertEqual(len(data), 2)
@@ -452,8 +478,15 @@ class TestScrapeGeneralFeed(unittest.TestCase):
             if url.endswith(".ics"):
                 return None  # feed outage
             return MockResponse(GENERAL_HTML)
-        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://calendars.illinois.edu/list/7"]), \
-             patch.object(scrape, "safe_request", side_effect=fake):
+
+        with (
+            patch.object(
+                scrape,
+                "GENERAL_CALENDAR_LINKS",
+                ["https://calendars.illinois.edu/list/7"],
+            ),
+            patch.object(scrape, "safe_request", side_effect=fake),
+        ):
             data = scrape.scrape_general()
         self.assertEqual(len(data), 2)  # HTML fallback parsed the list page
 
@@ -465,24 +498,44 @@ class TestScrapeGeneralFeed(unittest.TestCase):
             if url.endswith(".ics"):
                 return None
             return MockResponse(GENERAL_HTML)
-        with patch.object(scrape, "GENERAL_CALENDAR_LINKS",
-                          ["https://calendars.illinois.edu/list/7",
-                           "https://calendars.illinois.edu/list/557"]), \
-             patch.object(scrape, "safe_request", side_effect=fake):
+
+        with (
+            patch.object(
+                scrape,
+                "GENERAL_CALENDAR_LINKS",
+                [
+                    "https://calendars.illinois.edu/list/7",
+                    "https://calendars.illinois.edu/list/557",
+                ],
+            ),
+            patch.object(scrape, "safe_request", side_effect=fake),
+        ):
             data = scrape.scrape_general()
         summaries = {e["summary"] for e in data.values()}
         self.assertIn("All Day Exhibit", summaries)  # from the working feed
-        self.assertIn("Mock Event", summaries)       # from the HTML fallback
+        self.assertIn("Mock Event", summaries)  # from the HTML fallback
 
 
 class TestScrapeAthleticsFeed(unittest.TestCase):
     """Primary path: Sidearm per-sport ICS feed."""
 
     def _run(self):
-        with patch.object(scrape, "ATHLETICS_ICS_FEEDS",
-                          [("Football", "https://fightingillini.com/calendar.ashx/calendar.ics?sport_id=2",
-                            "https://fightingillini.com/sports/football/schedule")]), \
-             patch.object(scrape, "safe_request", return_value=MockResponse(ATHLETICS_ICS)):
+        with (
+            patch.object(
+                scrape,
+                "ATHLETICS_ICS_FEEDS",
+                [
+                    (
+                        "Football",
+                        "https://fightingillini.com/calendar.ashx/calendar.ics?sport_id=2",
+                        "https://fightingillini.com/sports/football/schedule",
+                    )
+                ],
+            ),
+            patch.object(
+                scrape, "safe_request", return_value=MockResponse(ATHLETICS_ICS)
+            ),
+        ):
             return scrape.scrape_athletics()
 
     def test_home_games_only(self):
@@ -496,15 +549,22 @@ class TestScrapeAthleticsFeed(unittest.TestCase):
         uab = [e for e in data.values() if "UAB" in e["summary"]][0]
         self.assertIn("2099-09-03T20:00", uab["start"])  # 0100Z → 8 PM Chicago (CDT)
         duke = [e for e in data.values() if "Duke" in e["summary"]][0]
-        self.assertEqual(duke["summary"], "Football Game: Illinois VS. Duke")  # promo suffix stripped
-        self.assertEqual(uab["htmlLink"], "https://fightingillini.com/sports/football/schedule")
+        self.assertEqual(
+            duke["summary"], "Football Game: Illinois VS. Duke"
+        )  # promo suffix stripped
+        self.assertEqual(
+            uab["htmlLink"], "https://fightingillini.com/sports/football/schedule"
+        )
 
 
 class TestScrapeGeneral(unittest.TestCase):
-
     def _run_general(self, html):
-        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com/list"]), \
-             patch.object(scrape, "safe_request", return_value=MockResponse(html)):
+        with (
+            patch.object(
+                scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com/list"]
+            ),
+            patch.object(scrape, "safe_request", return_value=MockResponse(html)),
+        ):
             return scrape.scrape_general()
 
     def test_schema_fields_present(self):
@@ -533,29 +593,39 @@ class TestScrapeGeneral(unittest.TestCase):
 
     def test_deduplication(self):
         """Same URL on two calendar pages should only appear once."""
-        dup_html = GENERAL_HTML  # pretend this is returned for both pages
         calls = [0]
+
         def fake_safe_request(url, session, **kw):
             calls[0] += 1
             if calls[0] == 1:
                 # First page — return events + a fake next-link
                 return MockResponse(
-                    GENERAL_HTML +
-                    '<div class="next-link"><a href="/list/7?page=2">Next</a></div>'
+                    GENERAL_HTML
+                    + '<div class="next-link"><a href="/list/7?page=2">Next</a></div>'
                 )
             # Second page — same events (duplicates)
             return MockResponse(GENERAL_HTML)
 
-        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://calendars.illinois.edu/list/7"]), \
-             patch.object(scrape, "safe_request", side_effect=fake_safe_request):
+        with (
+            patch.object(
+                scrape,
+                "GENERAL_CALENDAR_LINKS",
+                ["https://calendars.illinois.edu/list/7"],
+            ),
+            patch.object(scrape, "safe_request", side_effect=fake_safe_request),
+        ):
             data = scrape.scrape_general()
 
         # Should not have duplicates — only 2 unique events
         self.assertEqual(len(data), 2)
 
     def test_empty_on_failed_request(self):
-        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com/list"]), \
-             patch.object(scrape, "safe_request", return_value=None):
+        with (
+            patch.object(
+                scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com/list"]
+            ),
+            patch.object(scrape, "safe_request", return_value=None),
+        ):
             data = scrape.scrape_general()
         self.assertEqual(data, {})
 
@@ -584,8 +654,14 @@ class TestRecurringEventKeepsAllDates(unittest.TestCase):
     """
 
     def test_both_occurrences_kept(self):
-        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com/list"]), \
-             patch.object(scrape, "safe_request", return_value=MockResponse(self.RECURRING_HTML)):
+        with (
+            patch.object(
+                scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com/list"]
+            ),
+            patch.object(
+                scrape, "safe_request", return_value=MockResponse(self.RECURRING_HTML)
+            ),
+        ):
             data = scrape.scrape_general()
         starts = sorted(e["start"][:10] for e in data.values())
         self.assertEqual(starts, ["2026-03-02", "2026-03-09"])
@@ -595,8 +671,14 @@ class TestScrapeGeneral2026Markup(unittest.TestCase):
     """The July 2026 site redesign: \xa0 in date headers, entry-heading/entry-meta."""
 
     def _run(self):
-        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com/list"]), \
-             patch.object(scrape, "safe_request", return_value=MockResponse(GENERAL_HTML_2026)):
+        with (
+            patch.object(
+                scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com/list"]
+            ),
+            patch.object(
+                scrape, "safe_request", return_value=MockResponse(GENERAL_HTML_2026)
+            ),
+        ):
             return scrape.scrape_general()
 
     def test_parses_new_markup(self):
@@ -618,10 +700,15 @@ class TestScrapeGeneral2026Markup(unittest.TestCase):
 
 
 class TestScrapeAthletics(unittest.TestCase):
-
     def _run_athletics(self, html):
-        with patch.object(scrape, "ATHLETIC_TICKET_LINKS", ["https://fightingillini.com/sports/mens-basketball/schedule"]), \
-             patch.object(scrape, "safe_request", return_value=MockResponse(html)):
+        with (
+            patch.object(
+                scrape,
+                "ATHLETIC_TICKET_LINKS",
+                ["https://fightingillini.com/sports/mens-basketball/schedule"],
+            ),
+            patch.object(scrape, "safe_request", return_value=MockResponse(html)),
+        ):
             return scrape.scrape_athletics()
 
     def test_games_parsed(self):
@@ -630,7 +717,15 @@ class TestScrapeAthletics(unittest.TestCase):
 
     def test_game_schema(self):
         data = self._run_athletics(ATHLETICS_HTML)
-        required = {"summary", "start", "end", "location", "tag", "description", "htmlLink"}
+        required = {
+            "summary",
+            "start",
+            "end",
+            "location",
+            "tag",
+            "description",
+            "htmlLink",
+        }
         for ev in data.values():
             self.assertTrue(required.issubset(ev.keys()))
             self.assertEqual(ev["tag"], "Athletics")
@@ -642,8 +737,14 @@ class TestScrapeAthletics(unittest.TestCase):
         self.assertIn("T19:00", purdue["start"])
 
     def test_empty_on_failed_request(self):
-        with patch.object(scrape, "ATHLETIC_TICKET_LINKS", ["https://fightingillini.com/sports/football/schedule"]), \
-             patch.object(scrape, "safe_request", return_value=None):
+        with (
+            patch.object(
+                scrape,
+                "ATHLETIC_TICKET_LINKS",
+                ["https://fightingillini.com/sports/football/schedule"],
+            ),
+            patch.object(scrape, "safe_request", return_value=None),
+        ):
             data = scrape.scrape_athletics()
         self.assertEqual(data, {})
 
@@ -652,8 +753,16 @@ class TestScrapeAthletics2026Markup(unittest.TestCase):
     """The July 2026 Sidearm redesign: s-game-card layout, home games say 'vs'."""
 
     def _run(self):
-        with patch.object(scrape, "ATHLETIC_TICKET_LINKS", ["https://fightingillini.com/sports/football/schedule"]), \
-             patch.object(scrape, "safe_request", return_value=MockResponse(ATHLETICS_HTML_2026)):
+        with (
+            patch.object(
+                scrape,
+                "ATHLETIC_TICKET_LINKS",
+                ["https://fightingillini.com/sports/football/schedule"],
+            ),
+            patch.object(
+                scrape, "safe_request", return_value=MockResponse(ATHLETICS_HTML_2026)
+            ),
+        ):
             return scrape.scrape_athletics()
 
     def test_home_games_only(self):
@@ -685,8 +794,12 @@ class TestScrapeYearWrapAround(unittest.TestCase):
             mock_dt.now.return_value = datetime(2026, 8, 1)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
-            with patch.object(scrape, "ATHLETIC_TICKET_LINKS", ["https://example.com"]), \
-                 patch.object(scrape, "safe_request", return_value=MockResponse(ATHLETICS_HTML)):
+            with (
+                patch.object(scrape, "ATHLETIC_TICKET_LINKS", ["https://example.com"]),
+                patch.object(
+                    scrape, "safe_request", return_value=MockResponse(ATHLETICS_HTML)
+                ),
+            ):
                 data = scrape.scrape_athletics()
 
         # Both Feb and Mar events should be assigned year 2027
@@ -698,8 +811,12 @@ class TestScrapeYearWrapAround(unittest.TestCase):
             mock_dt.now.return_value = datetime(2026, 1, 1)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
-            with patch.object(scrape, "ATHLETIC_TICKET_LINKS", ["https://example.com"]), \
-                 patch.object(scrape, "safe_request", return_value=MockResponse(ATHLETICS_HTML)):
+            with (
+                patch.object(scrape, "ATHLETIC_TICKET_LINKS", ["https://example.com"]),
+                patch.object(
+                    scrape, "safe_request", return_value=MockResponse(ATHLETICS_HTML)
+                ),
+            ):
                 data = scrape.scrape_athletics()
 
         for ev in data.values():
@@ -742,8 +859,10 @@ class TestTimeParsing(unittest.TestCase):
           </ul>
         </div>
         """
-        with patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com"]), \
-             patch.object(scrape, "safe_request", return_value=MockResponse(html)):
+        with (
+            patch.object(scrape, "GENERAL_CALENDAR_LINKS", ["https://example.com"]),
+            patch.object(scrape, "safe_request", return_value=MockResponse(html)),
+        ):
             data = scrape.scrape_general()
         return list(data.values())[0] if data else None
 
@@ -774,49 +893,78 @@ class TestTimeParsing(unittest.TestCase):
 
 
 class TestScrapeIntegration(unittest.TestCase):
-
     def _all_empty(self):
         """Return a dict of patches that make every scraper return {}."""
         return {
-            "scrape_general":    {},
+            "scrape_general": {},
             "scrape_state_farm": {},
-            "scrape_athletics":  {},
-            "scrape_kcpa":       {},
-            "scrape_kam":        {},
+            "scrape_athletics": {},
+            "scrape_kcpa": {},
+            "scrape_kam": {},
         }
 
     def test_scrape_merges_all_sources(self):
-        with patch.object(scrape, "scrape_general",    return_value={0: {"summary": "G"}}), \
-             patch.object(scrape, "scrape_state_farm", return_value={0: {"summary": "SF"}}), \
-             patch.object(scrape, "scrape_athletics",  return_value={0: {"summary": "A"}}), \
-             patch.object(scrape, "scrape_kcpa",       return_value={0: {"summary": "KC"}}), \
-             patch.object(scrape, "scrape_kam",        return_value={0: {"summary": "KAM"}}), \
-             patch.object(scrape, "scrape_music",      return_value={0: {"summary": "MUS"}}), \
-             patch.object(scrape, "scrape_spurlock",   return_value={0: {"summary": "SPU"}}), \
-             patch.object(scrape, "scrape_parkland",   return_value={0: {"summary": "PK"}}), \
-             patch.object(scrape, "scrape_urbana_library", return_value={0: {"summary": "UFL"}}), \
-             patch.object(scrape, "scrape_gies",       return_value={0: {"summary": "GIES"}}), \
-             patch.object(scrape, "scrape_cs",         return_value={0: {"summary": "CS"}}), \
-             patch.object(scrape, "scrape_food_resources", return_value={0: {"summary": "FOOD"}}):
+        with (
+            patch.object(scrape, "scrape_general", return_value={0: {"summary": "G"}}),
+            patch.object(
+                scrape, "scrape_state_farm", return_value={0: {"summary": "SF"}}
+            ),
+            patch.object(
+                scrape, "scrape_athletics", return_value={0: {"summary": "A"}}
+            ),
+            patch.object(scrape, "scrape_kcpa", return_value={0: {"summary": "KC"}}),
+            patch.object(scrape, "scrape_kam", return_value={0: {"summary": "KAM"}}),
+            patch.object(scrape, "scrape_music", return_value={0: {"summary": "MUS"}}),
+            patch.object(
+                scrape, "scrape_spurlock", return_value={0: {"summary": "SPU"}}
+            ),
+            patch.object(
+                scrape, "scrape_parkland", return_value={0: {"summary": "PK"}}
+            ),
+            patch.object(
+                scrape, "scrape_urbana_library", return_value={0: {"summary": "UFL"}}
+            ),
+            patch.object(scrape, "scrape_gies", return_value={0: {"summary": "GIES"}}),
+            patch.object(scrape, "scrape_cs", return_value={0: {"summary": "CS"}}),
+            patch.object(
+                scrape, "scrape_food_resources", return_value={0: {"summary": "FOOD"}}
+            ),
+        ):
             data = scrape.scrape()
         self.assertEqual(len(data), 12)
         summaries = {e["summary"] for e in data.values()}
-        self.assertEqual(summaries, {"G", "SF", "A", "KC", "KAM", "MUS", "SPU", "PK", "UFL", "GIES", "CS", "FOOD"})
+        self.assertEqual(
+            summaries,
+            {
+                "G",
+                "SF",
+                "A",
+                "KC",
+                "KAM",
+                "MUS",
+                "SPU",
+                "PK",
+                "UFL",
+                "GIES",
+                "CS",
+                "FOOD",
+            },
+        )
 
     def test_main_raises_when_all_empty(self):
         def fake_scrape():
             scrape.last_scrape_stats = {
                 "state_farm": {"events": 0, "status": "empty_or_failed"},
-                "athletics":  {"events": 0, "status": "empty_or_failed"},
-                "general":    {"events": 0, "status": "empty_or_failed"},
-                "kcpa":       {"events": 0, "status": "empty_or_failed"},
-                "kam":        {"events": 0, "status": "empty_or_failed"},
-                "music":      {"events": 0, "status": "empty_or_failed"},
-                "spurlock":   {"events": 0, "status": "empty_or_failed"},
-                "parkland":   {"events": 0, "status": "empty_or_failed"},
+                "athletics": {"events": 0, "status": "empty_or_failed"},
+                "general": {"events": 0, "status": "empty_or_failed"},
+                "kcpa": {"events": 0, "status": "empty_or_failed"},
+                "kam": {"events": 0, "status": "empty_or_failed"},
+                "music": {"events": 0, "status": "empty_or_failed"},
+                "spurlock": {"events": 0, "status": "empty_or_failed"},
+                "parkland": {"events": 0, "status": "empty_or_failed"},
                 "urbana_library": {"events": 0, "status": "empty_or_failed"},
-                "gies":       {"events": 0, "status": "empty_or_failed"},
-                "cs":         {"events": 0, "status": "empty_or_failed"},
+                "gies": {"events": 0, "status": "empty_or_failed"},
+                "cs": {"events": 0, "status": "empty_or_failed"},
                 "food_resources": {"events": 0, "status": "empty_or_failed"},
             }
             return {}
@@ -828,19 +976,41 @@ class TestScrapeIntegration(unittest.TestCase):
     def test_salvage_reuses_previous_run_for_empty_source(self):
         import json
         import tempfile
+
         # Previous run's file: one future-dated kcpa event, source-tagged.
-        prev = {"0": {"summary": "Old KCPA Show", "source": "kcpa",
-                      "start": "2099-01-01T19:00:00-06:00", "end": "2099-01-01T21:00:00-06:00"}}
+        prev = {
+            "0": {
+                "summary": "Old KCPA Show",
+                "source": "kcpa",
+                "start": "2099-01-01T19:00:00-06:00",
+                "end": "2099-01-01T21:00:00-06:00",
+            }
+        }
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             json.dump(prev, f)
 
-        empty = {p: patch.object(scrape, p, return_value={}) for p in [
-            "scrape_state_farm", "scrape_athletics", "scrape_kcpa", "scrape_kam",
-            "scrape_music", "scrape_spurlock", "scrape_parkland",
-            "scrape_urbana_library", "scrape_gies", "scrape_cs", "scrape_food_resources",
-        ]}
-        with patch.object(scrape, "OUTPUT_FILE", f.name), \
-             patch.object(scrape, "scrape_general", return_value={0: {"summary": "Fresh"}}):
+        empty = {
+            p: patch.object(scrape, p, return_value={})
+            for p in [
+                "scrape_state_farm",
+                "scrape_athletics",
+                "scrape_kcpa",
+                "scrape_kam",
+                "scrape_music",
+                "scrape_spurlock",
+                "scrape_parkland",
+                "scrape_urbana_library",
+                "scrape_gies",
+                "scrape_cs",
+                "scrape_food_resources",
+            ]
+        }
+        with (
+            patch.object(scrape, "OUTPUT_FILE", f.name),
+            patch.object(
+                scrape, "scrape_general", return_value={0: {"summary": "Fresh"}}
+            ),
+        ):
             for p in empty.values():
                 p.start()
             try:
@@ -853,25 +1023,34 @@ class TestScrapeIntegration(unittest.TestCase):
         summaries = {e["summary"] for e in data.values()}
         self.assertIn("Fresh", summaries)
         self.assertIn("Old KCPA Show", summaries)  # salvaged, not lost
-        self.assertEqual(scrape.last_scrape_stats["kcpa"]["status"], "salvaged_from_previous_run")
+        self.assertEqual(
+            scrape.last_scrape_stats["kcpa"]["status"], "salvaged_from_previous_run"
+        )
         self.assertEqual(scrape.last_scrape_stats["kcpa"]["salvaged"], 1)
 
     def test_main_publishes_when_critical_source_salvaged(self):
         import json
         import tempfile
+
         out = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
         out.close()
 
         def fake_scrape():
             scrape.last_scrape_stats = {
-                "general": {"events": 0, "status": "salvaged_from_previous_run", "salvaged": 5},
+                "general": {
+                    "events": 0,
+                    "status": "salvaged_from_previous_run",
+                    "salvaged": 5,
+                },
                 "parkland": {"events": 3, "status": "success"},
                 "urbana_library": {"events": 2, "status": "success"},
             }
             return {0: {"summary": "Something"}}
 
-        with patch.object(scrape, "OUTPUT_FILE", out.name), \
-             patch.object(scrape, "scrape", side_effect=fake_scrape):
+        with (
+            patch.object(scrape, "OUTPUT_FILE", out.name),
+            patch.object(scrape, "scrape", side_effect=fake_scrape),
+        ):
             scrape.main()  # must NOT raise — salvage covered the broken critical source
 
         with open(out.name) as f:
@@ -883,23 +1062,27 @@ class TestScrapeIntegration(unittest.TestCase):
         def boom():
             raise RuntimeError("source down")
 
-        with patch.object(scrape, "OUTPUT_FILE", "/nonexistent/no-salvage.json"), \
-             patch.object(scrape, "scrape_state_farm", side_effect=boom), \
-             patch.object(scrape, "scrape_athletics",  return_value={}), \
-             patch.object(scrape, "scrape_general",    return_value={0: {"summary": "G"}}), \
-             patch.object(scrape, "scrape_kcpa",       return_value={}), \
-             patch.object(scrape, "scrape_kam",        return_value={}), \
-             patch.object(scrape, "scrape_music",      return_value={}), \
-             patch.object(scrape, "scrape_spurlock",   return_value={}), \
-             patch.object(scrape, "scrape_parkland",   return_value={}), \
-             patch.object(scrape, "scrape_urbana_library", return_value={}), \
-             patch.object(scrape, "scrape_gies",       return_value={}), \
-             patch.object(scrape, "scrape_cs",         return_value={}), \
-             patch.object(scrape, "scrape_food_resources", return_value={}):
+        with (
+            patch.object(scrape, "OUTPUT_FILE", "/nonexistent/no-salvage.json"),
+            patch.object(scrape, "scrape_state_farm", side_effect=boom),
+            patch.object(scrape, "scrape_athletics", return_value={}),
+            patch.object(scrape, "scrape_general", return_value={0: {"summary": "G"}}),
+            patch.object(scrape, "scrape_kcpa", return_value={}),
+            patch.object(scrape, "scrape_kam", return_value={}),
+            patch.object(scrape, "scrape_music", return_value={}),
+            patch.object(scrape, "scrape_spurlock", return_value={}),
+            patch.object(scrape, "scrape_parkland", return_value={}),
+            patch.object(scrape, "scrape_urbana_library", return_value={}),
+            patch.object(scrape, "scrape_gies", return_value={}),
+            patch.object(scrape, "scrape_cs", return_value={}),
+            patch.object(scrape, "scrape_food_resources", return_value={}),
+        ):
             data = scrape.scrape()
 
         self.assertEqual(len(data), 1)
-        self.assertEqual(scrape.last_scrape_stats["state_farm"]["status"], "empty_or_failed")
+        self.assertEqual(
+            scrape.last_scrape_stats["state_farm"]["status"], "empty_or_failed"
+        )
 
 
 if __name__ == "__main__":
