@@ -261,7 +261,8 @@ document.addEventListener("DOMContentLoaded", function () {
           tag: next.tag || 'General',
           location: (next.location || '').split(',')[0].trim(),
           cadence: next.recurrence || inferCadence(evs),
-          next: next
+          next: next,
+          events: sorted
         });
       } else {
         for (const e of evs) oneTimeEvents.push(e);
@@ -323,7 +324,27 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       btn.addEventListener('click', () => showEventDetails(s.next));
-      list.appendChild(btn);
+
+      // The panel row is a button, so the add control cannot nest inside it.
+      const row = document.createElement('div');
+      row.className = 'recurring-item-wrap';
+      row.appendChild(btn);
+
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'add-to-calendar-btn';
+      add.title = 'Add this series to Google Calendar';
+      add.innerHTML = syncIcon;
+      // Disabled for the duration: a second click mid-run would write the whole
+      // series to the calendar twice, which is not undoable from here.
+      add.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        add.disabled = true;
+        try { await addSeries(s); } finally { add.disabled = false; }
+      });
+      row.appendChild(add);
+
+      list.appendChild(row);
     });
   }
 
@@ -814,6 +835,66 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // ========== STEP 6: Add to Calendar ==========
+  // Scraped events carry no RRULE, so a series is added as its individual
+  // occurrences — the ones actually shipped in the JSON.
+  function calendarPayload(event) {
+    const endISO = event.end || new Date(new Date(event.start).getTime() + 60 * 60 * 1000).toISOString();
+    return {
+      summary: event.summary || 'Untitled Event',
+      location: event.location || '',
+      description: event.description || '',
+      start: { dateTime: event.start, timeZone: 'America/Chicago' },
+      end: { dateTime: endISO, timeZone: 'America/Chicago' }
+    };
+  }
+
+  async function addSeries(series) {
+    if (!window.calendarAPI || !window.calendarAPI.isConnected()) {
+      showToast('Not Connected', 'Please connect your Google Calendar first!', 'warning');
+      return;
+    }
+    const occurrences = (series.events || [series.next]).filter(e => e.start);
+    if (!occurrences.length) {
+      showToast('No Date', 'This series has no date information and cannot be added.', 'warning');
+      return;
+    }
+
+    // Writing several events to a real calendar is not easily undone, and the
+    // shipped occurrences may be only part of the series — say so before adding.
+    // Only the trimmed survivors carry series_total, so scan rather than assume
+    // it sits on the first one (same lookup inferCadence uses).
+    const total = (occurrences.find(e => e.series_total) || {}).series_total;
+    if (occurrences.length > 1) {
+      let msg = 'Add ' + occurrences.length + ' occurrences of "' + series.title +
+        '" to your Google Calendar?';
+      if (total && total > occurrences.length) {
+        msg += '\n\nThis series has ' + total + ' dates in total; only the next ' +
+          occurrences.length + ' are listed here.';
+      }
+      if (!window.confirm(msg)) return;
+    }
+
+    let ok = 0, failed = 0;
+    for (const occurrence of occurrences) {
+      try {
+        await window.calendarAPI.addEvent(calendarPayload(occurrence));
+        ok++;
+      } catch (error) {
+        failed++;
+        console.error('Error adding series occurrence to calendar:', error);
+      }
+    }
+    if (ok && window.calendarAPI.refresh) window.calendarAPI.refresh();
+
+    if (failed && !ok) {
+      showToast('Nothing Added', 'All ' + failed + ' occurrences failed. Check your connection and try again.', 'error');
+    } else if (failed) {
+      showToast('Partly Added', ok + ' added, ' + failed + ' failed. Try again to retry the rest.', 'warning');
+    } else {
+      showToast('Series Added', ok + ' occurrence' + (ok === 1 ? '' : 's') + ' of "' + series.title + '" added to your Google Calendar', 'success');
+    }
+  }
+
   async function addToCalendar(event) {
     // Check if user is connected to Google Calendar
     if (!window.calendarAPI || !window.calendarAPI.isConnected()) {
@@ -827,25 +908,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     try {
-      const startISO = event.start;
-      const endISO = event.end || new Date(new Date(event.start).getTime() + 60 * 60 * 1000).toISOString();
-
-      // Prepare event data for Google Calendar format
-      const eventData = {
-        summary: event.summary || 'Untitled Event',
-        location: event.location || '',
-        description: event.description || '',
-        start: {
-          dateTime: startISO,
-          timeZone: 'America/Chicago'
-        },
-        end: {
-          dateTime: endISO,
-          timeZone: 'America/Chicago'
-        }
-      };
-
-      const response = await window.calendarAPI.addEvent(eventData)
+      const response = await window.calendarAPI.addEvent(calendarPayload(event))
       if (response) {
         showToast('Event Added', `"${event.summary}" was added to your Google Calendar`, 'success');
 

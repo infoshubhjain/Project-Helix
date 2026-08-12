@@ -569,9 +569,20 @@ body.dark-mode #search-events:focus {
 }
 .recurring-list::-webkit-scrollbar { width: 4px; }
 .recurring-list::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 2px; }
-.recurring-item {
-  text-align: left;
+.recurring-item-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 10px;
   background: var(--surface);
+  transition: background 0.12s;
+}
+.recurring-item-wrap:hover { background: var(--surface-2); }
+.recurring-item {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
   border: none;
   padding: 10px 12px;
   cursor: pointer;
@@ -579,9 +590,7 @@ body.dark-mode #search-events:focus {
   flex-direction: column;
   gap: 3px;
   font-family: inherit;
-  transition: background 0.12s;
 }
-.recurring-item:hover { background: var(--surface-2); }
 .recurring-item-top {
   display: flex;
   align-items: center;
@@ -810,6 +819,8 @@ body.dark-mode #search-events:focus {
   border-color: var(--accent);
   color: var(--accent);
 }
+.add-to-calendar-btn:disabled { opacity: 0.45; cursor: default; }
+.add-to-calendar-btn:disabled:hover { border-color: var(--line); color: var(--text-2); }
 .add-to-calendar-btn svg { width: 14px; height: 14px; }
 
 /* ========== LOADING / SKELETON ========== */
@@ -1354,7 +1365,11 @@ footer {
   padding: 14px 16px;
   margin-bottom: 10px;
   background: var(--surface-2);
+  position: relative;
 }
+.food-card-add { position: absolute; top: 10px; right: 12px; }
+/* Keep the title and scope chip clear of the absolutely-placed add button. */
+.food-card:has(.food-card-add) .food-card-head { padding-right: 38px; }
 .food-card-head { display: flex; align-items: baseline; gap: 10px; justify-content: space-between; }
 .food-card h4 { margin: 0 0 6px; font-size: 0.9375rem; }
 .food-card p { margin: 8px 0 0; color: var(--text-2); font-size: 0.8125rem; line-height: 1.5; }

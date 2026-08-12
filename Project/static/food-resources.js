@@ -28,8 +28,15 @@
   if (!openBtn || !modal || !listEl) return;
 
   var resources = null; // fetched once, on first open
+  var shownResources = []; // what render() last drew, so a card's index resolves back
 
-  function card(r) {
+  var SYNC_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+    '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>' +
+    '<line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>' +
+    '<line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/></svg>';
+
+  function card(r, idx) {
     // A phone number is optional; only render the row when there is one.
     var phone = r.phone
       ? '<div class="food-card-phone"><a href="tel:' + escapeHtml(r.phone.replace(/[^0-9+]/g, "")) +
@@ -44,8 +51,13 @@
       ? '<span class="food-dist-chip' + (r.walk_min > 30 ? " food-dist-far" : "") + '">' +
         escapeHtml(r.distance_mi + " mi · " + r.walk_min + " min walk") + "</span>"
       : "";
+    // Directory-only entries have no dependable time, so they get no add button.
+    var addBtn = (r.calendar || []).length
+      ? '<button type="button" class="add-to-calendar-btn food-card-add" data-idx="' + idx +
+        '" title="Add this resource to Google Calendar">' + SYNC_ICON + "</button>"
+      : "";
     return (
-      '<article class="food-card">' +
+      '<article class="food-card">' + addBtn +
       '<div class="food-card-head">' +
       '<h4>' + escapeHtml(r.name) + "</h4>" +
       '<span class="food-scope-chip">' + escapeHtml(r.scope) + "</span>" +
@@ -87,6 +99,7 @@
   function render() {
     if (!resources) return;
     var shown = visible();
+    shownResources = shown;
     syncAddAllButton();
     listEl.innerHTML = shown.length
       ? '<div class="food-count">' + shown.length + " resource" + (shown.length === 1 ? "" : "s") +
@@ -169,11 +182,51 @@
     }
   }
 
-  async function addAll() {
-    if (!window.calendarAPI || !window.calendarAPI.isConnected()) {
-      toast("Not Connected", "Connect your Google Calendar first, then try again.", "warning");
-      return;
+  // Shared by "add all" and the per-card button. onProgress is optional so the
+  // single-card path doesn't need a label to update.
+  async function runJobs(jobs, onProgress) {
+    var ok = 0, failed = 0;
+    for (var i = 0; i < jobs.length; i++) {
+      if (onProgress) onProgress(i, jobs.length);
+      try {
+        await window.calendarAPI.addEvent(calendarPayload(jobs[i].resource, jobs[i].entry));
+        ok++;
+      } catch (err) {
+        failed++;
+        console.error("Failed to add", jobs[i].resource.name, err);
+      }
     }
+    if (ok && window.calendarAPI.refresh) window.calendarAPI.refresh();
+    return { ok: ok, failed: failed };
+  }
+
+  function connected() {
+    if (window.calendarAPI && window.calendarAPI.isConnected()) return true;
+    toast("Not Connected", "Connect your Google Calendar first, then try again.", "warning");
+    return false;
+  }
+
+  // One resource, from its card button — its recurrence rules only.
+  async function addOne(resource) {
+    if (!connected()) return;
+    var jobs = (resource.calendar || []).map(function (entry) {
+      return { resource: resource, entry: entry };
+    });
+    if (!jobs.length) return;
+
+    var result = await runJobs(jobs);
+    if (result.failed && !result.ok) {
+      toast("Not Added", "Could not add " + resource.name + ". Check your connection and try again.", "error");
+    } else if (result.failed) {
+      toast("Partly Added", result.ok + " of " + jobs.length + " events for " + resource.name + " were added.", "warning");
+    } else {
+      toast("Added to Calendar", resource.name + " is now on your calendar as " + result.ok +
+        " recurring event" + (result.ok === 1 ? "" : "s") + ".", "success");
+    }
+  }
+
+  async function addAll() {
+    if (!connected()) return;
     var jobs = addableFromView();
     if (!jobs.length) return;
 
@@ -186,19 +239,11 @@
     if (!window.confirm(msg)) return;
 
     addAllBtn.disabled = true;
-    var ok = 0, failed = 0;
-    for (var i = 0; i < jobs.length; i++) {
-      addAllBtn.textContent = "Adding " + (i + 1) + " of " + jobs.length + "…";
-      try {
-        await window.calendarAPI.addEvent(calendarPayload(jobs[i].resource, jobs[i].entry));
-        ok++;
-      } catch (err) {
-        failed++;
-        console.error("Failed to add", jobs[i].resource.name, err);
-      }
-    }
+    var result = await runJobs(jobs, function (i, n) {
+      addAllBtn.textContent = "Adding " + (i + 1) + " of " + n + "…";
+    });
+    var ok = result.ok, failed = result.failed;
     syncAddAllButton();
-    if (window.calendarAPI.refresh) window.calendarAPI.refresh();
 
     if (failed && !ok) {
       toast("Nothing Added", "All " + failed + " events failed. Check your connection and try again.", "error");
@@ -215,6 +260,17 @@
   openBtn.addEventListener("click", open);
   if (closeBtn) closeBtn.addEventListener("click", close);
   if (addAllBtn) addAllBtn.addEventListener("click", addAll);
+  // Cards are rendered as HTML, so the per-card buttons are handled by delegation.
+  listEl.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest(".food-card-add");
+    if (!btn) return;
+    var resource = shownResources[Number(btn.dataset.idx)];
+    if (!resource || btn.disabled) return;
+    // Same reason "add all" disables its button: a double-click would add the
+    // resource to the real calendar twice.
+    btn.disabled = true;
+    addOne(resource).finally(function () { btn.disabled = false; });
+  });
   if (searchEl) searchEl.addEventListener("input", render);
   if (scopeEl) scopeEl.addEventListener("change", render);
   modal.addEventListener("click", function (e) { if (e.target === modal) close(); });
