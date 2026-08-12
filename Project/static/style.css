@@ -1388,3 +1388,18 @@ footer {
 }
 .food-actions-note { color: var(--text-3); font-size: 0.75rem; }
 #food-add-all-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.food-card-who { font-size: 0.8125rem; color: var(--text-2); margin-top: 2px; }
+.food-dist-chip {
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  white-space: nowrap;
+}
+/* Anything over a 30-minute walk is a different kind of trip — say so quietly. */
+.food-dist-far { background: transparent; color: var(--text-3); border: 1px solid var(--line); }

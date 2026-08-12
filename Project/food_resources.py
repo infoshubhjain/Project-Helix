@@ -16,6 +16,7 @@ and The Daily Illini reporting on cultural-house meal programs.
 """
 
 from datetime import datetime, date, timedelta
+from math import asin, cos, radians, sin, sqrt
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Any, Optional
 
@@ -513,24 +514,211 @@ FOOD_RESOURCES: List[Dict[str, Any]] = [
 ]
 
 
+# Who can use each resource, and where it is.
+#
+# Kept beside the recurrence table rather than inside it so the rules above stay
+# readable. `test_every_resource_has_metadata` fails if a resource is added here
+# without both, so the split cannot silently rot.
+#
+# `eligibility` is quoted from the operator's own wording where possible — this
+# is the difference between walking 25 minutes and being turned away at the door.
+# `coords` are (lat, lon), geocoded once via OpenStreetMap Nominatim; None means
+# the resource has no single physical location (online, or a county-wide list).
+_RESOURCE_META: Dict[str, Dict[str, Any]] = {
+    # ---- Year-round community ----
+    "Daily Bread Soup Kitchen": {
+        "eligibility": "Open to the public",
+        "coords": (40.11688, -88.23859),
+    },
+    "St. Vincent de Paul Food Pantry": {
+        "eligibility": "Open to the public",
+        "coords": (40.11469, -88.21695),
+    },
+    "Stone Creek Church Food Pantry": {
+        "eligibility": "Open to the public",
+        "coords": (40.0851, -88.20887),
+    },
+    "Jubilee Café Community Dinner": {
+        "eligibility": "Open to students and community",
+        "coords": (40.1082, -88.23064),
+    },
+    "Salvation Army Canteen Run": {
+        "eligibility": "Open to the public",
+        "coords": (40.14134, -88.23804),
+    },
+    "Emmanuel Memorial Sack-Lunch Ministry": {
+        "eligibility": "Open to the public — while supplies last",
+        "coords": (40.1166, -88.24628),
+    },
+    "UniPlace Wednesday Community Dinner": {
+        "eligibility": "Open to campus and community",
+        "coords": (40.11307, -88.22948),
+    },
+    "Wesley Evening Food Pantry": {
+        "eligibility": "No income requirement, no personal information needed",
+        "coords": (40.10981, -88.22515),
+    },
+    "ARC Food Assistance & Nutrition Program": {
+        "eligibility": "U of I students only",
+        "coords": (40.10064, -88.23605),
+    },
+    'The Literary "Oh SNAP!" Free Meal': {
+        "eligibility": "Requires a SNAP card",
+        "coords": (40.11727, -88.24325),
+    },
+    "Newman Shares Food Pantry": {
+        "eligibility": "U of I & Parkland students — proof of enrollment required",
+        "coords": (40.10614, -88.22974),
+    },
+    "University YMCA Food Pantry": {
+        "eligibility": "Open to the public",
+        "coords": (40.10651, -88.22922),
+    },
+    "Restoration Urban Ministries Pantry": {
+        "eligibility": "Open to the public",
+        "coords": (40.12774, -88.27876),
+    },
+    "Salvation Army Food Pantry": {
+        "eligibility": "Open to the public",
+        "coords": (40.14134, -88.23804),
+    },
+    "Windsor Road Christian Church Pantry": {
+        "eligibility": "Open to the public",
+        "coords": (40.08284, -88.28798),
+    },
+    "Vineyard Church Food Pantry": {
+        "eligibility": "Open to the public — drive-up only",
+        "coords": (40.12948, -88.21904),
+    },
+    "Grace Lutheran Church Pantry": {
+        "eligibility": "Open to the public",
+        "coords": (40.11308, -88.2588),
+    },
+    "Friends of Champaign County Pantry": {
+        "eligibility": "Open to the public",
+        "coords": (40.13359, -88.24627),
+    },
+    "New Life Faith Christian Fellowship Pantry": {
+        "eligibility": "Open to the public",
+        "coords": (40.12206, -88.19829),
+    },
+    "St. Luke C.M.E. Food Pantry": {
+        "eligibility": "Open to the public",
+        "coords": (40.12786, -88.23216),
+    },
+    # ---- Academic-year campus ----
+    "Everybody Eats at ISR": {
+        "eligibility": "Any student — completely free, no ID required",
+        "coords": (40.10992, -88.22162),
+    },
+    "Everybody Eats at Ike (SDRP)": {
+        "eligibility": "Any student — completely free, no ID required",
+        "coords": (40.10364, -88.23522),
+    },
+    "Bevier Café — Everybody Eats": {
+        "eligibility": "Open to all — pay what you can, token from the entrance jar",
+        "coords": (40.10479, -88.22426),
+    },
+    "LAS Undercover Food Pantry": {
+        "eligibility": "U of I students — ask at the front desk",
+        "coords": (40.10657, -88.22817),
+    },
+    "McKinley Community Dinner": {
+        "eligibility": "All students welcome, regardless of need",
+        "coords": (40.10849, -88.23278),
+    },
+    "Dish It Up (Women's Resources Center)": {
+        "eligibility": "Open to all students",
+        "coords": (40.11057, -88.22961),
+    },
+    "Food for Thought (Asian American Cultural Center)": {
+        "eligibility": "Open to all students",
+        "coords": (40.10631, -88.22482),
+    },
+    "Food for the Soul (Bruce D. Nesbitt African American Cultural Center)": {
+        "eligibility": "Open to all students",
+        "coords": (40.10613, -88.22517),
+    },
+    "Lunch on Us (La Casa Cultural Latina)": {
+        "eligibility": "Open to all students",
+        "coords": (40.1057, -88.22435),
+    },
+    "Dinner on Us (Native American House)": {
+        "eligibility": "Open to all students",
+        "coords": (40.10622, -88.22431),
+    },
+    "Friday Forum + Conversation Café": {
+        "eligibility": "Open to all",
+        "coords": (40.10651, -88.22922),
+    },
+    # ---- Directory-only ----
+    "Orange Room Wesley Food Pantry": {
+        "eligibility": "Any student — no personal information or income check",
+        "coords": (40.10939, -88.22722),
+    },
+    "Champaign Church of the Brethren Pantry": {
+        "eligibility": "By appointment — call ahead",
+        "coords": (40.12822, -88.24324),
+    },
+    "Faith Baptist Church Pantry": {
+        "eligibility": "By appointment — call ahead",
+        "coords": (40.15618, -88.23938),
+    },
+    "Eastern Illinois Foodbank — Champaign County pantry finder": {
+        "eligibility": "Varies by pantry",
+        "coords": None,
+    },
+    "SNAP & Illinois Extension: Eat.Move.Save": {
+        "eligibility": "SNAP guidance — eligibility varies",
+        "coords": None,
+    },
+}
+
+# Distances are quoted from the Illini Union, the most recognisable campus
+# midpoint. Straight-line, so treat it as "roughly how far", not a route.
+CAMPUS_REFERENCE = (40.10939, -88.22722)
+_WALK_MINUTES_PER_MILE = 20  # ~3 mph
+
+
+def _distance_from_campus(coords):
+    """(miles, walking minutes) from the campus reference, or (None, None)."""
+    if not coords:
+        return None, None
+    lat1, lon1 = radians(CAMPUS_REFERENCE[0]), radians(CAMPUS_REFERENCE[1])
+    lat2, lon2 = radians(coords[0]), radians(coords[1])
+    a = (
+        sin((lat2 - lat1) / 2) ** 2
+        + cos(lat1) * cos(lat2) * sin((lon2 - lon1) / 2) ** 2
+    )
+    miles = 3958.8 * 2 * asin(sqrt(a))
+    return round(miles, 2), int(round(miles * _WALK_MINUTES_PER_MILE))
+
+
 def food_directory() -> List[Dict[str, Any]]:
     """The curated table flattened for the frontend resource list.
 
     Includes directory_only entries, which deliberately produce no dated events.
     """
-    return [
-        {
-            "name": r["name"],
-            "location": r["location"],
-            "link": r["link"],
-            "description": r["description"],
-            "recurrence": r["recurrence"],
-            "phone": r.get("phone", ""),
-            "scope": "Campus" if r["active"] == "academic" else "Community",
-            "calendar": _calendar_entries(r),
-        }
-        for r in FOOD_RESOURCES
-    ]
+    out = []
+    for r in FOOD_RESOURCES:
+        meta = _RESOURCE_META.get(r["name"], {})
+        miles, walk = _distance_from_campus(meta.get("coords"))
+        out.append(
+            {
+                "name": r["name"],
+                "location": r["location"],
+                "link": r["link"],
+                "description": r["description"],
+                "recurrence": r["recurrence"],
+                "phone": r.get("phone", ""),
+                "scope": "Campus" if r["active"] == "academic" else "Community",
+                "eligibility": meta.get("eligibility", ""),
+                "distance_mi": miles,
+                "walk_min": walk,
+                "calendar": _calendar_entries(r),
+            }
+        )
+    return out
 
 
 # Google Calendar RRULE day codes, indexed by Python's date.weekday().

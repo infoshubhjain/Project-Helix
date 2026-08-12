@@ -38,11 +38,56 @@ MAX_EVENTS_PER_SOURCE = 6000
 # Occurrences kept per same-titled recurring series. 8 covers a full week plus a
 # day, so the frontend can still infer the weekday pattern for its cadence label.
 MAX_OCCURRENCES_PER_SERIES = 8
+# Description cap. 500 truncated 65% of feed events, cutting free-food mentions
+# that sit late in a blurb ("...lunch will be provided" after three paragraphs of
+# speaker bio). 2000 keeps 97.6% whole; past that it is ~30 KB for 40 events.
+MAX_DESCRIPTION_CHARS = 2000
 USER_AGENT = "Mozilla/5.0 (compatible; ProjectHelix/1.0; +https://github.com/infoshubhjain/Project-Helix)"
 RATE_LIMIT_DELAY = 1  # seconds between requests
 
 # Variables & Constants
 last_scrape_stats: Dict[str, Dict[str, Any]] = {}
+
+# Human-readable name per calendar ID, used as the event's `organizer`.
+#
+# The ICS ORGANIZER and CONTACT properties are deliberately NOT used for this.
+# ORGANIZER is an individual's email (179 of 709 events on calendar 7 are personal
+# NetIDs) and CONTACT is a person's name, sometimes with their phone number.
+# Republishing those on a public, indexed site is a privacy escalation over their
+# presence in a feed, and would hand a scraped email list to spammers. The
+# publishing calendar identifies the organising unit without naming a person.
+CALENDAR_NAMES = {
+    7: "General Events",
+    25: "Center for Advanced Study",
+    33: "Krannert Center",
+    44: "McKinley Health Center",
+    45: "Center for Global Studies",
+    59: "Department of Economics",
+    60: "University Housing",
+    62: "Exhibits",
+    75: "Saturday Physics for Everyone",
+    79: "Materials Research Laboratory",
+    81: "Seminars of Interest",
+    417: "College of Education",
+    461: "Listening Opportunities",
+    557: "Academic Dates",
+    594: "Advising & Placement",
+    596: "Cultural & International",
+    597: "Performances",
+    598: "Speakers",
+    637: "Recreation, Health & Wellness",
+    705: "College of Veterinary Medicine",
+    2568: "Grainger College of Engineering",
+    4063: "Illini Union",
+    4092: "University Library",
+    4756: "Chicago-Area Campus Events",
+    4757: "Research (OVCRI)",
+    5510: "International & Area Studies Library",
+    7439: "Family & Graduate Housing",
+    7604: "Research Seminars",
+    7767: "Illinois Public Media (WILL)",
+}
+
 GENERAL_CALENDAR_LINKS = [
     # Original sources
     "https://calendars.illinois.edu/list/7",  # General Events
@@ -710,7 +755,9 @@ def _scrape_general_feed() -> tuple:
                     continue
                 seen_uids.add(uid)
 
-                description = _ics_unescape(ve.get("DESCRIPTION", "")).strip()[:500]
+                description = _ics_unescape(ve.get("DESCRIPTION", "")).strip()[
+                    :MAX_DESCRIPTION_CHARS
+                ]
                 location = _ics_unescape(ve.get("LOCATION", "")).strip() or "TBA"
                 categories = _ics_unescape(ve.get("CATEGORIES", ""))
 
@@ -718,6 +765,7 @@ def _scrape_general_feed() -> tuple:
                     "summary": summary,
                     "description": description,
                     "location": location,
+                    "organizer": CALENDAR_NAMES.get(int(cal_id), ""),
                     "htmlLink": ve.get("URL", "").replace("http://", "https://", 1)
                     or f"https://calendars.illinois.edu/list/{cal_id}",
                     "tag": classify_event(
@@ -1021,7 +1069,7 @@ def scrape_state_farm():
                         ps = desc.find_all("p")
                         event_info["description"] = " ".join(
                             p.text for p in ps if p.text
-                        ).strip()
+                        ).strip()[:MAX_DESCRIPTION_CHARS]
 
                     event_info["htmlLink"] = event_link
                     event_info["location"] = (
@@ -1141,7 +1189,7 @@ def _scrape_athletics_feed() -> Dict[str, Any]:
                 event_info = {
                     "summary": f"{sport} Game: Illinois VS. {opponent}",
                     "description": _ics_unescape(ve.get("DESCRIPTION", "")).strip()[
-                        :500
+                        :MAX_DESCRIPTION_CHARS
                     ],
                     "location": _ics_unescape(ve.get("LOCATION", "")).strip()
                     or "Champaign, Ill.",

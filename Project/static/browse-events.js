@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", function () {
   
   // Advanced filter elements
   const dateFilter = document.getElementById("date-filter");
+  const organizerFilter = document.getElementById("organizer-filter");
   const locationFilter = document.getElementById("location-filter");
   const timeFilter = document.getElementById("time-filter");
   const customDateGroup = document.getElementById("custom-date-group");
@@ -346,6 +347,18 @@ document.addEventListener("DOMContentLoaded", function () {
       categorySelect.appendChild(option);
     }
 
+    // Organizer dropdown — the publishing calendar, not a person. Only events
+    // from the campus feeds carry one, so the option is absent when empty.
+    if (organizerFilter) {
+      const organizers = [...new Set(allEvents.map(e => e.organizer).filter(Boolean))].sort();
+      for (const name of organizers) {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        organizerFilter.appendChild(option);
+      }
+    }
+
     // Horizontal filter chips
     const chipsContainer = document.getElementById('filter-chips');
     if (!chipsContainer) return;
@@ -406,6 +419,11 @@ document.addEventListener("DOMContentLoaded", function () {
     if (timeFilter) {
       timeFilter.addEventListener('change', searchEvents);
     }
+
+    // Organizer filter change handler
+    if (organizerFilter) {
+      organizerFilter.addEventListener('change', searchEvents);
+    }
     
     // Custom date change handlers
     if (startDateInput) {
@@ -427,6 +445,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (dateFilter) dateFilter.value = 'all';
     if (locationFilter) locationFilter.value = 'all';
     if (timeFilter) timeFilter.value = 'all';
+    if (organizerFilter) organizerFilter.value = 'all';
     if (customDateGroup) customDateGroup.style.display = 'none';
     if (startDateInput) startDateInput.value = '';
     if (endDateInput) endDateInput.value = '';
@@ -470,6 +489,10 @@ document.addEventListener("DOMContentLoaded", function () {
     if (timeFilter && timeFilter.value !== 'all') {
       activeFilters.push({ type: 'time', value: timeFilter.options[timeFilter.selectedIndex].text });
     }
+
+    if (organizerFilter && organizerFilter.value !== 'all') {
+      activeFilters.push({ type: 'organizer', value: organizerFilter.value });
+    }
     
     // Display active filters as chips (build via DOM to avoid XSS from searchInput.value)
     activeFiltersDisplay.innerHTML = '';
@@ -494,12 +517,20 @@ document.addEventListener("DOMContentLoaded", function () {
       
       // Location filtering
       if (!passesLocationFilter(event)) return false;
-      
+
       // Time filtering
       if (!passesTimeFilter(event)) return false;
-      
+
+      // Organizer filtering
+      if (!passesOrganizerFilter(event)) return false;
+
       return true;
     });
+  }
+
+  function passesOrganizerFilter(event) {
+    const value = organizerFilter ? organizerFilter.value : 'all';
+    return value === 'all' || event.organizer === value;
   }
   
   function passesDateFilter(event) {

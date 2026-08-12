@@ -35,6 +35,15 @@
       ? '<div class="food-card-phone"><a href="tel:' + escapeHtml(r.phone.replace(/[^0-9+]/g, "")) +
         '">' + escapeHtml(r.phone) + "</a></div>"
       : "";
+    // Who can walk in matters as much as when: being turned away after a
+    // 40-minute walk is the failure this panel exists to prevent.
+    var eligibility = r.eligibility
+      ? '<div class="food-card-who">👤 ' + escapeHtml(r.eligibility) + "</div>"
+      : "";
+    var distance = r.walk_min != null
+      ? '<span class="food-dist-chip' + (r.walk_min > 30 ? " food-dist-far" : "") + '">' +
+        escapeHtml(r.distance_mi + " mi · " + r.walk_min + " min walk") + "</span>"
+      : "";
     return (
       '<article class="food-card">' +
       '<div class="food-card-head">' +
@@ -42,7 +51,8 @@
       '<span class="food-scope-chip">' + escapeHtml(r.scope) + "</span>" +
       "</div>" +
       '<div class="food-card-when">🕒 ' + escapeHtml(r.recurrence) + "</div>" +
-      '<div class="food-card-where">📍 ' + escapeHtml(r.location) + "</div>" +
+      '<div class="food-card-where">📍 ' + escapeHtml(r.location) + " " + distance + "</div>" +
+      eligibility +
       "<p>" + escapeHtml(r.description) + "</p>" +
       phone +
       (safeUrl(r.link)
@@ -62,8 +72,15 @@
     return resources.filter(function (r) {
       if (scope !== "all" && r.scope !== scope) return false;
       if (!q) return true;
-      return (r.name + " " + r.location + " " + r.description + " " + r.recurrence)
+      return (r.name + " " + r.location + " " + r.description + " " + r.recurrence +
+              " " + (r.eligibility || ""))
         .toLowerCase().indexOf(q) !== -1;
+    }).sort(function (a, b) {
+      // Nearest first — the practical question is "where can I walk to now".
+      // Entries with no fixed location (online, county-wide) sort last.
+      var da = a.walk_min == null ? Infinity : a.walk_min;
+      var db = b.walk_min == null ? Infinity : b.walk_min;
+      return da - db;
     });
   }
 

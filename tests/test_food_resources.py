@@ -162,6 +162,45 @@ class TestCalendarEntries(unittest.TestCase):
                 self.assertTrue(entry["start"] and entry["end"])
 
 
+class TestResourceMetadata(unittest.TestCase):
+    """Eligibility and coordinates live beside the table; keep them in sync."""
+
+    def test_every_resource_has_metadata(self):
+        """A resource added without eligibility/coords must fail loudly here."""
+        for r in fr.FOOD_RESOURCES:
+            self.assertIn(r["name"], fr._RESOURCE_META, f"{r['name']} missing metadata")
+            meta = fr._RESOURCE_META[r["name"]]
+            self.assertTrue(meta.get("eligibility"), f"{r['name']} has no eligibility")
+            self.assertIn("coords", meta, f"{r['name']} has no coords key")
+
+    def test_no_orphaned_metadata(self):
+        names = {r["name"] for r in fr.FOOD_RESOURCES}
+        for name in fr._RESOURCE_META:
+            self.assertIn(name, names, f"{name} has metadata but no resource")
+
+    def test_coords_are_in_champaign_urbana(self):
+        """A geocoder mis-hit put one resource 14 km east; catch that class of bug."""
+        for name, meta in fr._RESOURCE_META.items():
+            c = meta.get("coords")
+            if c is None:
+                continue
+            self.assertTrue(40.0 < c[0] < 40.25, f"{name} latitude {c[0]} off-area")
+            self.assertTrue(-88.35 < c[1] < -88.15, f"{name} longitude {c[1]} off-area")
+
+    def test_distance_from_campus(self):
+        self.assertEqual(fr._distance_from_campus(fr.CAMPUS_REFERENCE), (0.0, 0))
+        self.assertEqual(fr._distance_from_campus(None), (None, None))
+        miles, walk = fr._distance_from_campus((40.08284, -88.28798))  # Windsor Rd
+        self.assertGreater(miles, 3)
+        self.assertEqual(walk, int(round(miles * 20)))
+
+    def test_directory_exposes_eligibility_and_distance(self):
+        for r in fr.food_directory():
+            self.assertTrue(r["eligibility"])
+            self.assertIn("distance_mi", r)
+            self.assertIn("walk_min", r)
+
+
 class TestDeriveAcademicTerms(unittest.TestCase):
     """Term dates read from the Academic Dates calendar (ID 557)."""
 
