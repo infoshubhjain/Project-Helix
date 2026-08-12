@@ -1,5 +1,7 @@
 // Project Helix service worker — offline shell + fresh-when-online event data.
-const CACHE = 'helix-v1';
+// Bump on every app-shell change — a stale v1 cache would keep serving an
+// index.html that has no food-resources.js tag.
+const CACHE = 'helix-v2';
 
 // App shell — cached on install for instant repeat loads and offline use.
 const ASSETS = [
@@ -15,6 +17,7 @@ const ASSETS = [
   './Project/static/calendar-connect.js',
   './Project/static/manual-event-parser.js',
   './Project/static/manual-event-handler.js',
+  './Project/static/food-resources.js',
   './Project/static/images/favicon.png',
   './Project/static/images/Illinois_Block_I.png'
 ];

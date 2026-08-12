@@ -1320,3 +1320,71 @@ footer {
   .card-day { font-size: 1.375rem; }
   #toast-container { right: 12px; max-width: calc(100% - 24px); }
 }
+
+/* ---------- Food Resource List ---------- */
+/* The trigger sits alongside the export buttons but is accented: it is the
+   entry point to the free-food directory, not another export format. */
+.food-resources-btn {
+  padding: 8px 12px;
+  border-radius: var(--r-s);
+  border: 1px solid var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.food-resources-btn:hover { background: var(--accent); color: #fff; }
+
+.food-modal-content { max-width: 720px; }
+.food-modal-intro { color: var(--text-2); font-size: 0.875rem; margin: 4px 0 16px; }
+
+.food-filter-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.food-filter-row input { flex: 1 1 200px; }
+.food-filter-row select { flex: 0 1 auto; }
+
+.food-count { color: var(--text-3); font-size: 0.75rem; margin-bottom: 10px; }
+
+.food-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+}
+.food-card-head { display: flex; align-items: baseline; gap: 10px; justify-content: space-between; }
+.food-card h4 { margin: 0 0 6px; font-size: 0.9375rem; }
+.food-card p { margin: 8px 0 0; color: var(--text-2); font-size: 0.8125rem; line-height: 1.5; }
+.food-card-when, .food-card-where { font-size: 0.8125rem; color: var(--text-2); margin-top: 2px; }
+.food-card-when { color: var(--text); font-weight: 500; }
+.food-card-phone { margin-top: 6px; font-size: 0.8125rem; }
+.food-card-phone a, .food-card-link { color: var(--accent); text-decoration: none; }
+.food-card-link { display: inline-block; margin-top: 8px; font-size: 0.8125rem; font-weight: 500; }
+.food-card-phone a:hover, .food-card-link:hover { text-decoration: underline; }
+
+.food-scope-chip {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  background: var(--surface);
+}
+.food-empty { color: var(--text-2); font-size: 0.875rem; }
+
+.food-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.food-actions-note { color: var(--text-3); font-size: 0.75rem; }
+#food-add-all-btn:disabled { opacity: 0.5; cursor: not-allowed; }

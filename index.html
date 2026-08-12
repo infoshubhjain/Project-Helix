@@ -109,6 +109,8 @@
             <select id="filter-category" aria-label="Filter by category">
               <option value="all">All Categories</option>
             </select>
+            <button id="food-resources-btn" class="food-resources-btn"
+                    title="Free food, pantries and meal programs around UIUC">🍕 Food Resource List by Shubh</button>
             <button id="export-ical-btn" class="export-btn" title="Export to iCal">iCal</button>
             <button id="export-csv-btn" class="export-btn" title="Export to CSV">CSV</button>
           </div>
@@ -286,6 +288,30 @@
     </div>
   </div>
 
+  <div id="food-modal" class="modal">
+    <div class="modal-content food-modal-content">
+      <span class="close-modal" id="close-food-modal">&times;</span>
+      <h3>🍕 Food Resource List by Shubh</h3>
+      <p class="food-modal-intro">
+        Free meals, pantries and meal programs around UIUC and Champaign–Urbana.
+        Hours change — call ahead or check the linked page before you go.
+      </p>
+      <div class="food-filter-row">
+        <input type="text" id="food-search" placeholder="Search resources..." aria-label="Search food resources" />
+        <select id="food-scope" aria-label="Filter by scope">
+          <option value="all">Campus &amp; Community</option>
+          <option value="Campus">Campus only</option>
+          <option value="Community">Community only</option>
+        </select>
+      </div>
+      <div class="food-actions">
+        <button id="food-add-all-btn" class="btn-primary" disabled>+ Add all to Google Calendar</button>
+        <span id="food-add-all-note" class="food-actions-note"></span>
+      </div>
+      <div id="food-list" class="food-list">Loading…</div>
+    </div>
+  </div>
+
   <!--
     SETUP: Google Calendar credentials
     ─────────────────────────────────────────────────────────────────────────────
@@ -315,6 +341,7 @@
   <script src="Project/static/calendar-connect.js"></script>
   <script src="Project/static/script.js"></script>
   <script src="Project/static/browse-events.js"></script>
+  <script src="Project/static/food-resources.js"></script>
 
   <footer>
     Copyright © 2025 Project Helix
