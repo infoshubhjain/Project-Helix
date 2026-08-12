@@ -229,14 +229,32 @@ function showToast(title, message, type = 'info', duration = 4000) {
     info: 'ℹ️'
   };
 
-  toast.innerHTML = `
-    <span class="toast-icon">${icons[type] || icons.info}</span>
-    <div class="toast-content">
-      <div class="toast-title">${title}</div>
-      ${message ? `<div class="toast-message">${message}</div>` : ''}
-    </div>
-    <button class="toast-close">×</button>
-  `;
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'toast-icon';
+  iconSpan.textContent = icons[type] || icons.info;
+
+  const contentDiv = document.createElement('div');
+  contentDiv.className = 'toast-content';
+
+  const titleDiv = document.createElement('div');
+  titleDiv.className = 'toast-title';
+  titleDiv.textContent = title;
+  contentDiv.appendChild(titleDiv);
+
+  if (message) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'toast-message';
+    msgDiv.textContent = message;
+    contentDiv.appendChild(msgDiv);
+  }
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'toast-close';
+  closeBtn.textContent = '×';
+
+  toast.appendChild(iconSpan);
+  toast.appendChild(contentDiv);
+  toast.appendChild(closeBtn);
 
   // Add to container
   container.appendChild(toast);

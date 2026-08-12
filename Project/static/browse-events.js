@@ -164,9 +164,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function normalizeDescription(rawValue) {
     if (!rawValue) return '';
-    const div = document.createElement('div');
-    div.innerHTML = String(rawValue);
-    return div.textContent.replace(/\s+/g, ' ').trim();
+    if (typeof DOMParser !== 'undefined') {
+      const doc = new DOMParser().parseFromString(String(rawValue), 'text/html');
+      return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+    return String(rawValue).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   }
 
   function buildDescriptionPreview(event) {
