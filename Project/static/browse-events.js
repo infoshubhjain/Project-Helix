@@ -222,7 +222,12 @@ document.addEventListener("DOMContentLoaded", function () {
       const d = new Date(e.start);
       if (!isNaN(d.getTime())) days.add(d.getDay());
     }
-    const dateCount = new Set(events.map(e => (e.start || '').slice(0, 10))).size;
+    // The scraper ships only the next few occurrences of a long series and puts
+    // the real total on series_total, so count that rather than what we received.
+    const trimmed = events.find(e => e.series_total);
+    const dateCount = trimmed
+      ? trimmed.series_total
+      : new Set(events.map(e => (e.start || '').slice(0, 10))).size;
     if (days.size >= 5) return 'Most days · ' + dateCount + ' dates';
     if (days.size === 1) return 'Weekly · ' + DOW_SHORT[[...days][0]] + 's';
     const names = [...days].sort((a, b) => a - b).map(d => DOW_SHORT[d]).join(', ');
