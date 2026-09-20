@@ -1068,6 +1068,7 @@ class TestScrapeIntegration(unittest.TestCase):
             patch.object(scrape, "OUTPUT_FILE", out.name),
             patch.object(scrape, "FOOD_DIRECTORY_FILE", out.name + ".food"),
             patch.object(scrape, "scrape", side_effect=fake_scrape),
+            patch("builtins.print"),
         ):
             scrape.main()  # must NOT raise — salvage covered the broken critical source
 
