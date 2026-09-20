@@ -5,7 +5,7 @@
 
 help:
 	@echo "Project Helix - available targets:"
-	@echo "  make install      - Install Python deps and Playwright browser"
+	@echo "  make install      - Install Python dependencies"
 	@echo "  make test         - Run Python + JavaScript test suites"
 	@echo "  make test-py      - Run Python tests only"
 	@echo "  make test-js      - Run JavaScript tests only"
@@ -13,7 +13,7 @@ help:
 	@echo "  make help         - Show this help message"
 
 install:
-	cd Project && pip install -r requirements.txt && playwright install --with-deps chromium
+	cd Project && pip install -r requirements.txt
 
 test: test-py test-js
 

@@ -1,6 +1,13 @@
 name: Daily Scraper
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/scraper.yml'
+      - 'Project/*.py'
+      - 'Project/requirements.txt'
+      - 'tests/test_scrape_smoke.py'
   schedule:
     - cron: '0 14 * * *'  # 9:00 AM America/Chicago during daylight time
     - cron: '0 15 * * *'  # 9:00 AM America/Chicago during standard time
@@ -24,7 +31,7 @@ jobs:
       - name: Check for duplicate DST/standard cron run
         id: guard
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$(TZ=America/Chicago date +%H)" = "09" ]; then
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "$(TZ=America/Chicago date +%H)" = "09" ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"
           else
             echo "Skipping duplicate DST/standard cron run."
@@ -44,7 +51,6 @@ jobs:
         run: |
           pip install ruff
           pip install -r Project/requirements.txt
-          playwright install --with-deps chromium
 
       - name: Lint
         if: steps.guard.outputs.go == 'true'

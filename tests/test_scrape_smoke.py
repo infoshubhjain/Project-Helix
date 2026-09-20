@@ -20,6 +20,23 @@ class MockResponse:
         self.status_code = status_code
 
 
+class TestStateFarm(unittest.TestCase):
+    def test_detail_pages_use_http_and_keep_event_dates(self):
+        listing = '<a class="more buttons-hide" href="/events/detail/show">Show</a>'
+        detail = '''<h1 class="title">Concert</h1>
+        <ul class="eventDetailList">
+          <span class="m-date__month">Oct</span>
+          <span class="m-date__day">1</span>
+          <span class="m-date__year">2026</span>
+          <li class="item sidebar_event_starts"><span>7:00 PM</span></li>
+        </ul>'''
+        with patch.object(scrape, "safe_request", side_effect=[MockResponse(listing), MockResponse(detail)]) as request:
+            events = scrape.scrape_state_farm()
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["start"], "2026-10-01T19:00:00-05:00")
+
+
 # ---------------------------------------------------------------------------
 # Helpers — HTML fixtures
 # ---------------------------------------------------------------------------
@@ -1049,6 +1066,7 @@ class TestScrapeIntegration(unittest.TestCase):
 
         with (
             patch.object(scrape, "OUTPUT_FILE", out.name),
+            patch.object(scrape, "FOOD_DIRECTORY_FILE", out.name + ".food"),
             patch.object(scrape, "scrape", side_effect=fake_scrape),
         ):
             scrape.main()  # must NOT raise — salvage covered the broken critical source
@@ -1056,6 +1074,7 @@ class TestScrapeIntegration(unittest.TestCase):
         with open(out.name) as f:
             saved = json.load(f)
         os.unlink(out.name)
+        os.unlink(out.name + ".food")
         self.assertEqual(len(saved), 1)
 
     def test_one_failing_source_does_not_abort_others(self):

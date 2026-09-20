@@ -52,7 +52,7 @@ make scrape-local
 ## 📜 Technical Details
 
 -   **Languages**: HTML, CSS, JavaScript, Python
--   **Libraries**: Fuse.js (Search), BeautifulSoup4/Playwright (Scraping)
+-   **Libraries**: Fuse.js (Search), BeautifulSoup4/Requests (Scraping)
 -   **Deployment**: GitHub Pages
 
 ---

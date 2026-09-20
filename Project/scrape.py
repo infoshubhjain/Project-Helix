@@ -9,7 +9,6 @@ import html
 import time
 import logging
 from typing import Dict, List, Optional, Any
-from playwright.sync_api import sync_playwright
 import requests
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
@@ -1027,116 +1026,113 @@ def scrape_state_farm():
 
         print(f"   Found {len(event_listings)} event listings")
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            )
+        if not event_listings:
+            return events
+        seen_urls = set()
+        for i, a in enumerate(event_listings):
+            try:
+                event_link = a.get("href")
+                if not event_link or event_link in seen_urls:
+                    continue
+                if not event_link.startswith("http"):
+                    event_link = urljoin(
+                        "https://www.statefarmcenter.com/", event_link
+                    )
+                # SSRF guard: only follow links on the expected host
+                if urlparse(event_link).netloc != _STATEFARM_ALLOWED_HOST:
+                    logger.warning("Skipping off-domain URL: %s", event_link)
+                    continue
+                seen_urls.add(event_link)
 
-            seen_urls = set()
-            for i, a in enumerate(event_listings):
-                try:
-                    event_link = a.get("href")
-                    if not event_link or event_link in seen_urls:
-                        continue
-                    if not event_link.startswith("http"):
-                        event_link = urljoin(
-                            "https://www.statefarmcenter.com/", event_link
+                print(f"   [{i + 1}/{len(event_listings)}] Detail: {event_link}")
+                detail = safe_request(event_link, session)
+                if not detail:
+                    continue
+                detail_soup = BeautifulSoup(detail.text, "lxml")
+
+                event_info = {}
+                title_el = detail_soup.find(
+                    "h1", class_="title"
+                ) or detail_soup.find("h1")
+                event_info["summary"] = (
+                    title_el.text.strip()
+                    if title_el and title_el.text
+                    else "State Farm Center Event"
+                )
+
+                event_info["description"] = ""
+                desc = detail_soup.find("div", class_="description_inner")
+                if desc:
+                    ps = desc.find_all("p")
+                    event_info["description"] = " ".join(
+                        p.text for p in ps if p.text
+                    ).strip()[:MAX_DESCRIPTION_CHARS]
+
+                event_info["htmlLink"] = event_link
+                event_info["location"] = (
+                    "State Farm Center 1800 S 1st St, Champaign, IL 61820"
+                )
+                event_info["tag"] = "Entertainment"
+
+                sidebar = detail_soup.find("ul", class_="eventDetailList")
+                if sidebar:
+                    month_el = sidebar.find("span", class_="m-date__month")
+                    day_el = sidebar.find("span", class_="m-date__day")
+                    year_el = sidebar.find("span", class_="m-date__year")
+
+                    if month_el and day_el and year_el:
+                        month = month_el.text.strip()
+                        day = int(re.sub(r"\D", "", day_el.text.strip()) or "1")
+                        year = int(
+                            re.sub(r"\D", "", year_el.text.strip())
+                            or str(datetime.now().year)
                         )
-                    # SSRF guard: only follow links on the expected host
-                    if urlparse(event_link).netloc != _STATEFARM_ALLOWED_HOST:
-                        logger.warning("Skipping off-domain URL: %s", event_link)
-                        continue
-                    seen_urls.add(event_link)
 
-                    print(f"   [{i + 1}/{len(event_listings)}] Detail: {event_link}")
-                    page.goto(event_link, wait_until="domcontentloaded", timeout=20000)
-                    detail_soup = BeautifulSoup(page.content(), "lxml")
+                        start_li = sidebar.find(
+                            "li", class_="item sidebar_event_starts"
+                        )
+                        start_time_str = (
+                            start_li.find("span").text.strip()
+                            if start_li and start_li.find("span")
+                            else ""
+                        )
 
-                    event_info = {}
-                    title_el = detail_soup.find(
-                        "h1", class_="title"
-                    ) or detail_soup.find("h1")
-                    event_info["summary"] = (
-                        title_el.text.strip()
-                        if title_el and title_el.text
-                        else "State Farm Center Event"
-                    )
+                        t = parse_12h_time(start_time_str)
+                        # Default to 7PM if time missing but date exists
+                        hour, minute = t if t else (19, 0)
+                        start_dt = datetime(
+                            year,
+                            parse_month_to_number(month),
+                            day,
+                            hour,
+                            minute,
+                            tzinfo=ZoneInfo("America/Chicago"),
+                        )
 
-                    event_info["description"] = ""
-                    desc = detail_soup.find("div", class_="description_inner")
-                    if desc:
-                        ps = desc.find_all("p")
-                        event_info["description"] = " ".join(
-                            p.text for p in ps if p.text
-                        ).strip()[:MAX_DESCRIPTION_CHARS]
-
-                    event_info["htmlLink"] = event_link
-                    event_info["location"] = (
-                        "State Farm Center 1800 S 1st St, Champaign, IL 61820"
-                    )
-                    event_info["tag"] = "Entertainment"
-
-                    sidebar = detail_soup.find("ul", class_="eventDetailList")
-                    if sidebar:
-                        month_el = sidebar.find("span", class_="m-date__month")
-                        day_el = sidebar.find("span", class_="m-date__day")
-                        year_el = sidebar.find("span", class_="m-date__year")
-
-                        if month_el and day_el and year_el:
-                            month = month_el.text.strip()
-                            day = int(re.sub(r"\D", "", day_el.text.strip()) or "1")
-                            year = int(
-                                re.sub(r"\D", "", year_el.text.strip())
-                                or str(datetime.now().year)
-                            )
-
-                            start_li = sidebar.find(
-                                "li", class_="item sidebar_event_starts"
-                            )
-                            start_time_str = (
-                                start_li.find("span").text.strip()
-                                if start_li and start_li.find("span")
-                                else ""
-                            )
-
-                            t = parse_12h_time(start_time_str)
-                            # Default to 7PM if time missing but date exists
-                            hour, minute = t if t else (19, 0)
-                            start_dt = datetime(
-                                year,
-                                parse_month_to_number(month),
-                                day,
-                                hour,
-                                minute,
-                                tzinfo=ZoneInfo("America/Chicago"),
-                            )
-
-                            end_dt = start_dt + timedelta(hours=3)
-                            event_info["start"] = start_dt.isoformat()
-                            event_info["end"] = end_dt.isoformat()
-                        else:
-                            event_info["start"] = ""
-                            event_info["end"] = ""
+                        end_dt = start_dt + timedelta(hours=3)
+                        event_info["start"] = start_dt.isoformat()
+                        event_info["end"] = end_dt.isoformat()
                     else:
                         event_info["start"] = ""
                         event_info["end"] = ""
+                else:
+                    event_info["start"] = ""
+                    event_info["end"] = ""
 
-                    event_info = {
-                        k: (v.strip() if isinstance(v, str) else v)
-                        for k, v in event_info.items()
-                    }
-                    event_info = detect_free_food(event_info)
-                    if not validate_event(event_info):
-                        continue
-                    events[local_count] = event_info
-                    local_count += 1
-
-                except Exception as e:
-                    print(f"      ⚠️  Error processing {event_link}: {e}")
+                event_info = {
+                    k: (v.strip() if isinstance(v, str) else v)
+                    for k, v in event_info.items()
+                }
+                event_info = detect_free_food(event_info)
+                if not validate_event(event_info):
                     continue
+                events[local_count] = event_info
+                local_count += 1
 
-            browser.close()
+            except Exception as e:
+                print(f"      ⚠️  Error processing {event_link}: {e}")
+                continue
+
     except Exception as e:
         print(f"   ❌ Error in scrape_state_farm: {e}")
     return events
