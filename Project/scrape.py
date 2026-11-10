@@ -8,8 +8,10 @@ import json
 import html
 import time
 import logging
+import tempfile
 from typing import Dict, List, Optional, Any
 import requests
+import certifi
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from urllib.parse import urljoin, urlparse
@@ -85,6 +87,7 @@ CALENDAR_NAMES = {
     7439: "Family & Graduate Housing",
     7604: "Research Seminars",
     7767: "Illinois Public Media (WILL)",
+    8091: "University Housing",
 }
 
 GENERAL_CALENDAR_LINKS = [
@@ -125,6 +128,7 @@ GENERAL_CALENDAR_LINKS = [
     "https://calendars.illinois.edu/list/705",  # College of Veterinary Medicine (+12)
     "https://calendars.illinois.edu/list/7604",  # Research Seminars @ Illinois (+132)
     "https://calendars.illinois.edu/list/7439",  # Family & Graduate Housing (+83)
+    "https://calendars.illinois.edu/list/8091",  # University Housing events (7 unique on Nov 10, 2026)
 ]
 KCPA_CALENDAR_LINK = "https://krannertcenter.com/calendar"
 KAM_EVENTS_LINK = "https://kam.illinois.edu/exhibitions-events/events"
@@ -218,6 +222,12 @@ def safe_request(
     except Exception as e:
         logger.error(f"Request failed for {url}: {e}")
         return None
+
+
+def trusted_url(url: str, base: str, host: str) -> Optional[str]:
+    resolved = urljoin(base, url)
+    parsed = urlparse(resolved)
+    return resolved if parsed.scheme == "https" and parsed.hostname == host and not parsed.port else None
 
 
 def validate_event(event: Dict[str, Any]) -> bool:
@@ -810,7 +820,7 @@ def _scrape_general_html(links: Optional[List[str]] = None) -> Dict[str, Any]:
             while current_url and page_num < MAX_PAGES_PER_CALENDAR:
                 logger.debug(f"Scraping page {page_num + 1}: {current_url}")
 
-                response = safe_request(current_url, session)
+                response = safe_request(current_url, session, allow_redirects=False)
                 if not response:
                     logger.warning(
                         f"Failed to fetch page {page_num + 1} for {base_calendar_link}"
@@ -976,10 +986,7 @@ def _scrape_general_html(links: Optional[List[str]] = None) -> Dict[str, Any]:
                 next_link_div = soup.select_one("div.next-link a")
                 if next_link_div and next_link_div.get("href"):
                     next_href = next_link_div.get("href")
-                    if next_href.startswith("/"):
-                        current_url = "https://calendars.illinois.edu" + next_href
-                    else:
-                        current_url = next_href  # Should probably handle relative paths better if needed
+                    current_url = trusted_url(next_href, current_url, "calendars.illinois.edu")
                     page_num += 1
                 else:
                     current_url = None  # No more pages
@@ -1034,18 +1041,15 @@ def scrape_state_farm():
                 event_link = a.get("href")
                 if not event_link or event_link in seen_urls:
                     continue
-                if not event_link.startswith("http"):
-                    event_link = urljoin(
-                        "https://www.statefarmcenter.com/", event_link
-                    )
-                # SSRF guard: only follow links on the expected host
-                if urlparse(event_link).netloc != _STATEFARM_ALLOWED_HOST:
+                trusted_link = trusted_url(event_link, STATE_FARM_CENTER_CALENDAR_LINK, _STATEFARM_ALLOWED_HOST)
+                if not trusted_link:
                     logger.warning("Skipping off-domain URL: %s", event_link)
                     continue
+                event_link = trusted_link
                 seen_urls.add(event_link)
 
                 print(f"   [{i + 1}/{len(event_listings)}] Detail: {event_link}")
-                detail = safe_request(event_link, session)
+                detail = safe_request(event_link, session, allow_redirects=False)
                 if not detail:
                     continue
                 detail_soup = BeautifulSoup(detail.text, "lxml")
@@ -1142,18 +1146,19 @@ def scrape_athletics():
     """Home games for the four ticketed sports — Sidearm ICS feed first,
     HTML schedule pages as fallback (the markup broke silently in July 2026;
     the feed is a published contract)."""
-    events = _scrape_athletics_feed()
-    if events:
-        return events
-    logger.warning(
-        "Athletics ICS feeds yielded no events — falling back to HTML scraping."
-    )
-    return _scrape_athletics_html()
+    events, dead_schedules = _scrape_athletics_feed()
+    if dead_schedules:
+        logger.warning("Athletics: HTML fallback for %d unusable feed(s)", len(dead_schedules))
+        fallback_links = dead_schedules if events else None
+        for event in _scrape_athletics_html(fallback_links).values():
+            events[len(events)] = event
+    return events
 
 
-def _scrape_athletics_feed() -> Dict[str, Any]:
+def _scrape_athletics_feed() -> tuple:
     session = create_robust_session()
     events: Dict[int, Any] = {}
+    dead_schedules = []
     TZ = ZoneInfo("America/Chicago")
 
     print("\n🔍 Scraping Athletics ICS feeds...")
@@ -1161,6 +1166,7 @@ def _scrape_athletics_feed() -> Dict[str, Any]:
         response = safe_request(feed_url, session)
         if not response or "BEGIN:VEVENT" not in response.text:
             logger.warning("Athletics: no usable ICS feed for %s", sport)
+            dead_schedules.append(schedule_url)
             continue
 
         count = 0
@@ -1169,11 +1175,14 @@ def _scrape_athletics_feed() -> Dict[str, Any]:
                 summary = _ics_unescape(ve.get("SUMMARY", "")).strip()
                 # Past games carry a result prefix like "[W] " — strip it.
                 summary = re.sub(r"^\[\w\]\s*", "", summary)
-                # Home games say "vs"; away games say "at".
+                # "vs" also appears on neutral-site tournament placeholders.
                 m = re.search(r"\bvs\.?\s+(.+)", summary)
                 if not m:
                     continue
                 opponent = re.split(r"\s+[-–—|]\s+", m.group(1))[0].strip()
+                location = _ics_unescape(ve.get("LOCATION", "")).strip()
+                if location and not re.search(r"Champaign|Huff Hall", location, re.I):
+                    continue
 
                 start_dt = _parse_ics_dt(ve.get("DTSTART", ""), TZ)
                 if not start_dt:
@@ -1187,8 +1196,7 @@ def _scrape_athletics_feed() -> Dict[str, Any]:
                     "description": _ics_unescape(ve.get("DESCRIPTION", "")).strip()[
                         :MAX_DESCRIPTION_CHARS
                     ],
-                    "location": _ics_unescape(ve.get("LOCATION", "")).strip()
-                    or "Champaign, Ill.",
+                    "location": location or "Champaign, Ill.",
                     "tag": "Athletics",
                     "htmlLink": schedule_url,
                     "start": start_dt.isoformat(),
@@ -1203,16 +1211,16 @@ def _scrape_athletics_feed() -> Dict[str, Any]:
                 continue
         print(f"   ✅ {sport}: {count} home games from feed")
 
-    return events
+    return events, dead_schedules
 
 
-def _scrape_athletics_html():
+def _scrape_athletics_html(links=None):
     session = create_robust_session()
     events: Dict[int, Any] = {}
     local_count = 0
 
     print("\n🔍 Scraping Athletics Schedules...")
-    for calendar_link in ATHLETIC_TICKET_LINKS:
+    for calendar_link in links if links is not None else ATHLETIC_TICKET_LINKS:
         try:
             print(f"   Scraping {calendar_link}...")
             response = safe_request(calendar_link, session)
@@ -1398,11 +1406,10 @@ def scrape_kcpa() -> Dict[str, Any]:
                 if not href or href in seen_hrefs:
                     continue
                 seen_hrefs.add(href)
-                event_url = (
-                    href
-                    if href.startswith("http")
-                    else "https://krannertcenter.com" + href
-                )
+                event_url = trusted_url(href, KCPA_CALENDAR_LINK, "krannertcenter.com")
+                if not event_url:
+                    logger.warning("KCPA: skipping off-domain URL: %s", href)
+                    continue
 
                 # Parse date from list row — "JUL 16, 2026" or "Th Jul 16, 2026 - 5:30pm CT"
                 date_el = row.find(class_=re.compile("date", re.I))
@@ -1413,7 +1420,7 @@ def scrape_kcpa() -> Dict[str, Any]:
                 )
 
                 # Fetch detail page for time + venue + description
-                detail_resp = safe_request(event_url, session)
+                detail_resp = safe_request(event_url, session, allow_redirects=False)
                 if not detail_resp:
                     continue
                 detail = BeautifulSoup(detail_resp.text, "lxml")
@@ -1438,49 +1445,35 @@ def scrape_kcpa() -> Dict[str, Any]:
                 # Price / tag — default to Performances; detect_free_food handles food keywords separately
                 tag = "Performances"
 
-                # Date + time from detail event-date: "Th Jul 16, 2026 - 5:30pm CT"
-                event_date_el = detail.find(class_=re.compile("event-date"))
-                event_date_text = (
-                    event_date_el.get_text(strip=True)
-                    if event_date_el
-                    else list_date_text
-                )
-
-                # Parse "Th Jul 16, 2026 - 5:30pm CT" or "JUL 16, 2026"
-                date_match = re.search(
-                    r"(?:\w{2,3}\s+)?(\w+)\s+(\d{1,2}),?\s+(\d{4})",
-                    event_date_text,
-                    re.IGNORECASE,
-                )
-                if not date_match:
-                    logger.warning(
-                        "KCPA: could not parse date from %r", event_date_text
+                # A production can have several ticket dates on one detail page.
+                dates = detail.find_all(class_="event-date") or [list_date_text]
+                for date_el in dates:
+                    event_date_text = date_el.get_text(strip=True) if hasattr(date_el, "get_text") else date_el
+                    date_match = re.search(
+                        r"(?:\w{2,3}\s+)?(\w+)\s+(\d{1,2}),?\s+(\d{4})",
+                        event_date_text, re.IGNORECASE,
                     )
-                    continue
-
-                month_str, day_str, year_str = date_match.groups()
-                month_num = parse_month_to_number(month_str)
-                day, year = int(day_str), int(year_str)
-
-                t = parse_12h_time(event_date_text)
-                h, m = t if t else (19, 0)  # default 7 PM
-                start_dt = datetime(year, month_num, day, h, m, tzinfo=TZ)
-
-                end_dt = start_dt + timedelta(hours=2)
-
-                event_info = {
-                    "summary": summary,
-                    "description": description,
-                    "location": location,
-                    "tag": tag,
-                    "htmlLink": event_url,
-                    "start": start_dt.isoformat(),
-                    "end": end_dt.isoformat(),
-                }
-                event_info = detect_free_food(event_info)
-                if validate_event(event_info):
-                    events[local_count] = event_info
-                    local_count += 1
+                    if not date_match:
+                        logger.warning("KCPA: could not parse date from %r", event_date_text)
+                        continue
+                    month_str, day_str, year_str = date_match.groups()
+                    t = parse_12h_time(event_date_text)
+                    h, m = t if t else (19, 0)
+                    start_dt = datetime(int(year_str), parse_month_to_number(month_str),
+                                        int(day_str), h, m, tzinfo=TZ)
+                    event_info = {
+                        "summary": summary,
+                        "description": description,
+                        "location": location,
+                        "tag": tag,
+                        "htmlLink": event_url,
+                        "start": start_dt.isoformat(),
+                        "end": (start_dt + timedelta(hours=2)).isoformat(),
+                    }
+                    event_info = detect_free_food(event_info)
+                    if validate_event(event_info):
+                        events[local_count] = event_info
+                        local_count += 1
 
             except Exception as e:
                 logger.error("KCPA: error parsing event row: %s", e)
@@ -1564,13 +1557,28 @@ def scrape_kam() -> Dict[str, Any]:
                 if not date_match:
                     continue
 
+                time_match = re.match(
+                    r"\w+\s+\d+,\s*(\d{1,2}(?::\d{2})?)\s*(am|pm)?\s*[–-]\s*"
+                    r"(?:\w+\s+\d+,\s*)?(\d{1,2}(?::\d{2})?)\s*(am|pm)",
+                    row_text, re.IGNORECASE,
+                )
+                start_time, end_time = (10, 0), (17, 0)
+                if time_match:
+                    first, first_mer, last, last_mer = time_match.groups()
+                    if not first_mer:
+                        first_hour = int(first.split(":")[0])
+                        last_hour = int(last.split(":")[0])
+                        first_mer = "am" if first_hour > last_hour and first_hour != 12 else last_mer
+                    start_time = parse_12h_time(f"{first} {first_mer}") or start_time
+                    end_time = parse_12h_time(f"{last} {last_mer}") or end_time
+
                 now = datetime.now(tz=TZ)
                 start_month = parse_month_to_number(date_match.group(1))
                 start_day = int(date_match.group(2))
                 # Guess year: if month < current month, it's next year
                 start_year = now.year if start_month >= now.month else now.year + 1
                 start_dt = datetime(
-                    start_year, start_month, start_day, 10, 0, tzinfo=TZ
+                    start_year, start_month, start_day, *start_time, tzinfo=TZ
                 )
 
                 if end_date_match:
@@ -1579,9 +1587,11 @@ def scrape_kam() -> Dict[str, Any]:
                     end_year = (
                         start_year if end_month >= start_month else start_year + 1
                     )
-                    end_dt = datetime(end_year, end_month, end_day, 17, 0, tzinfo=TZ)
+                    end_dt = datetime(end_year, end_month, end_day, *end_time, tzinfo=TZ)
                 else:
-                    end_dt = start_dt + timedelta(hours=4)
+                    end_dt = datetime(start_year, start_month, start_day, *end_time, tzinfo=TZ)
+                    if end_dt <= start_dt:
+                        end_dt = start_dt + timedelta(hours=4)
 
                 event_info = {
                     "summary": summary,
@@ -1621,6 +1631,14 @@ def scrape_music() -> Dict[str, Any]:
     TZ = ZoneInfo("America/Chicago")
 
     print("\n🔍 Scraping School of Music events...")
+    # shortcut: Music omits its Let's Encrypt YR1 intermediate; remove this when the server serves a full chain.
+    with tempfile.NamedTemporaryFile("wb", delete=False) as ca_file:
+        with open(certifi.where(), "rb") as roots, open(
+            os.path.join(os.path.dirname(__file__), "music-issuer.pem"), "rb"
+        ) as issuer:
+            ca_file.write(roots.read())
+            ca_file.write(issuer.read())
+        session.verify = ca_file.name
     try:
         response = safe_request(MUSIC_EVENTS_LINK, session)
         if not response:
@@ -1719,6 +1737,8 @@ def scrape_music() -> Dict[str, Any]:
 
     except Exception as e:
         print(f"   ❌ Error in scrape_music: {e}")
+    finally:
+        os.unlink(session.verify)
 
     print(f"   ✅ Music: {local_count} events scraped")
     return events
@@ -2542,18 +2562,25 @@ def main():
             print(f"::warning title=Empty scraper source::{warn}")
 
     # Save to JSON file (minified for faster loading)
-    with open(OUTPUT_FILE, "w") as f:
-        json.dump(data, f, separators=(",", ":"))
-
-    print(f"Scraped {len(data)} events. Saved to {OUTPUT_FILE}")
-
     # The curated food table also ships as a standalone directory for the
     # "Food Resources" panel, so the frontend never re-implements the list.
     from food_resources import food_directory
 
-    with open(FOOD_DIRECTORY_FILE, "w") as f:
-        json.dump(food_directory(), f, separators=(",", ":"))
-    print(f"Wrote {len(food_directory())} food resources to {FOOD_DIRECTORY_FILE}")
+    directory = food_directory()
+    staged = []
+    try:
+        for path, content in ((OUTPUT_FILE, data), (FOOD_DIRECTORY_FILE, directory)):
+            with tempfile.NamedTemporaryFile("w", dir=os.path.dirname(path), delete=False) as f:
+                staged.append((f.name, path))
+                json.dump(content, f, separators=(",", ":"))
+        for temp_path, path in staged:
+            os.replace(temp_path, path)
+    finally:
+        for temp_path, _ in staged:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    print(f"Scraped {len(data)} events. Saved to {OUTPUT_FILE}")
+    print(f"Wrote {len(directory)} food resources to {FOOD_DIRECTORY_FILE}")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,12 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const U = require('../../Project/static/event-utils.js');
 
+test('safeUrl accepts web links and rejects script schemes', () => {
+  assert.strictEqual(U.safeUrl('https://example.com/event'), 'https://example.com/event');
+  assert.strictEqual(U.safeUrl('javascript:alert(1)'), '');
+  assert.strictEqual(U.safeUrl('//evil.test/event'), '');
+});
+
 test('escapeHtml escapes all five significant characters', () => {
   assert.strictEqual(U.escapeHtml(`<a href="x" onclick='y'>&`), '&lt;a href=&quot;x&quot; onclick=&#39;y&#39;&gt;&amp;');
 });

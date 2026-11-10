@@ -13,9 +13,7 @@
 
   // Escaping keeps a URL inside its attribute but does not stop a javascript:
   // scheme from running, so links are whitelisted to http(s) before rendering.
-  function safeUrl(url) {
-    return /^https?:\/\//i.test(String(url || "")) ? String(url) : "";
-  }
+  var safeUrl = window.HelixUtils.safeUrl;
 
   var openBtn = document.getElementById("food-resources-btn");
   var modal = document.getElementById("food-modal");

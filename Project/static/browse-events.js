@@ -825,8 +825,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Set the event link if it exists
     let linkElement = document.getElementById('detail-link');
-    if (event.htmlLink) {
-      linkElement.href = event.htmlLink;
+    const safeLink = window.HelixUtils.safeUrl(event.htmlLink);
+    if (safeLink) {
+      linkElement.href = safeLink;
       linkElement.style.display = 'inline-block';
     } else {
       linkElement.style.display = 'none';

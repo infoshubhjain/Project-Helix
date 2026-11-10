@@ -26,6 +26,10 @@
       .replace(/'/g, '&#39;');
   }
 
+  function safeUrl(url) {
+    return /^https?:\/\//i.test(String(url || '')) ? String(url) : '';
+  }
+
   // Map one raw tag segment to its canonical category.
   function _canonical(segment) {
     var t = String(segment || '').toLowerCase();
@@ -87,6 +91,7 @@
   return {
     CANONICAL_CATEGORIES: CANONICAL_CATEGORIES,
     escapeHtml: escapeHtml,
+    safeUrl: safeUrl,
     getEventCategories: getEventCategories,
     getTagClass: getTagClass,
     formatDate: formatDate,

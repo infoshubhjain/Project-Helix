@@ -37,6 +37,52 @@ class TestStateFarm(unittest.TestCase):
         self.assertEqual(events[0]["start"], "2026-10-01T19:00:00-05:00")
 
 
+class TestTrustedDetailUrls(unittest.TestCase):
+    def test_rejects_off_host_and_insecure_urls(self):
+        base = "https://krannertcenter.com/calendar"
+        self.assertEqual(scrape.trusted_url("/event/1", base, "krannertcenter.com"),
+                         "https://krannertcenter.com/event/1")
+        for url in ("http://127.0.0.1/private", "https://evil.test/event",
+                    "//evil.test/event", "javascript:alert(1)"):
+            with self.subTest(url=url):
+                self.assertIsNone(scrape.trusted_url(url, base, "krannertcenter.com"))
+
+    def test_kcpa_does_not_fetch_off_host_details(self):
+        listing = '<div class="views-row"><a href="http://127.0.0.1/private">Bad</a></div>'
+        with patch.object(scrape, "safe_request", return_value=MockResponse(listing)) as request:
+            self.assertEqual(scrape.scrape_kcpa(), {})
+        self.assertEqual(request.call_count, 1)
+
+    def test_kcpa_keeps_each_performance_date(self):
+        listing = '<div class="views-row"><a href="/events/show">Show</a></div>'
+        detail = '''<h1>Show</h1><div class="event-date">We Nov 11, 2026 - 7:30pm CT</div>
+        <div class="event-date">Th Nov 12, 2026 - 7:30pm CT</div>'''
+        with patch.object(scrape, "safe_request", side_effect=[MockResponse(listing), MockResponse(detail)]):
+            events = scrape.scrape_kcpa()
+        self.assertEqual([e["start"][:10] for e in events.values()], ["2026-11-11", "2026-11-12"])
+
+
+class TestAthleticsPartialFeed(unittest.TestCase):
+    def test_falls_back_only_for_missing_sport(self):
+        feed = {0: {"summary": "Football"}}
+        fallback = {0: {"summary": "Basketball"}}
+        with patch.object(scrape, "_scrape_athletics_feed", return_value=(feed, ["basketball-url"])), \
+             patch.object(scrape, "_scrape_athletics_html", return_value=fallback) as html:
+            events = scrape.scrape_athletics()
+        html.assert_called_once_with(["basketball-url"])
+        self.assertEqual([e["summary"] for e in events.values()], ["Football", "Basketball"])
+
+
+class TestKamTimes(unittest.TestCase):
+    def test_reads_time_range_from_row(self):
+        html = '''<div class="views-row"><a href="/events/show">Nov 12, 4–6:30 pm Show</a>
+        <span class="views-field-title">Show</span></div>'''
+        with patch.object(scrape, "safe_request", return_value=MockResponse(html)):
+            event = next(iter(scrape.scrape_kam().values()))
+        self.assertEqual(event["start"][11:16], "16:00")
+        self.assertEqual(event["end"][11:16], "18:30")
+
+
 # ---------------------------------------------------------------------------
 # Helpers — HTML fixtures
 # ---------------------------------------------------------------------------
@@ -121,6 +167,13 @@ DTSTART:20990912T183000Z
 DTEND:20990912T213000Z
 LOCATION:Champaign\\, Ill., Gies Memorial Stadium
 SUMMARY:Illini Football vs Duke - Hall of Fame Weekend | FamILLy Day
+END:VEVENT
+BEGIN:VEVENT
+UID:vcal_4-admin.fightingillini.com
+DTSTART:20991001T183000Z
+DTEND:20991004T213000Z
+LOCATION:Indianapolis\, Ind.
+SUMMARY:Illini Football vs Big Ten Tournament
 END:VEVENT
 END:VCALENDAR
 """

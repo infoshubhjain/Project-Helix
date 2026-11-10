@@ -49,16 +49,16 @@ jobs:
       - name: Install dependencies
         if: steps.guard.outputs.go == 'true'
         run: |
-          pip install ruff
+          pip install ruff==0.15.16
           pip install -r Project/requirements.txt
 
       - name: Lint
         if: steps.guard.outputs.go == 'true'
         run: ruff check Project/scrape.py
 
-      - name: Run smoke tests
+      - name: Run Python tests
         if: steps.guard.outputs.go == 'true'
-        run: python -m unittest discover -s tests -p 'test_scrape_smoke.py' -v
+        run: python -m unittest discover -s tests -v
 
       - name: Set up Node
         if: steps.guard.outputs.go == 'true'

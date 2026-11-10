@@ -1,7 +1,7 @@
 // Project Helix service worker — offline shell + fresh-when-online event data.
 // Bump on every app-shell change — a stale v1 cache would keep serving an
 // index.html that has no food-resources.js tag.
-const CACHE = 'helix-v2';
+const CACHE = 'helix-v3';
 
 // App shell — cached on install for instant repeat loads and offline use.
 const ASSETS = [
@@ -45,14 +45,19 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   // Only manage same-origin traffic; Google APIs / CDNs pass straight through.
   if (url.origin !== self.location.origin) return;
+  if (url.search) return;
+  const assetPath = url.pathname;
+  const shellPaths = ASSETS.map((asset) => new URL(asset, self.registration.scope).pathname);
+  if (!shellPaths.includes(assetPath) && !assetPath.endsWith('/Project/scraped_events.json') &&
+      !assetPath.endsWith('/Project/food_resources.json')) return;
 
   // Event data: network-first so listings stay fresh, cache as offline fallback.
-  if (url.pathname.endsWith('scraped_events.json')) {
+  if (url.pathname.endsWith('scraped_events.json') || url.pathname.endsWith('food_resources.json')) {
     event.respondWith(
       fetch(req)
         .then((res) => {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
+          if (res.ok) caches.open(CACHE).then((c) => c.put(req, copy));
           return res;
         })
         .catch(() => caches.match(req))
@@ -66,7 +71,7 @@ self.addEventListener('fetch', (event) => {
       const network = fetch(req)
         .then((res) => {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
+          if (res.ok) caches.open(CACHE).then((c) => c.put(req, copy));
           return res;
         })
         .catch(() => cached);
