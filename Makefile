@@ -21,6 +21,7 @@ test-py:
 	python3 -m unittest discover -s tests -v
 
 test-js:
+	@for file in Project/static/*.js service-worker.js; do node --check "$$file" || exit 1; done
 	node --test tests/js/*.test.js
 
 validate:

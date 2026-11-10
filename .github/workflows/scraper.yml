@@ -68,7 +68,7 @@ jobs:
 
       - name: Run JS tests
         if: steps.guard.outputs.go == 'true'
-        run: node --test tests/js/*.test.js
+        run: make test-js
 
       - name: Run Scraper
         if: steps.guard.outputs.go == 'true'

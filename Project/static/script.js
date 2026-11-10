@@ -260,7 +260,6 @@ function showToast(title, message, type = 'info', duration = 4000) {
   container.appendChild(toast);
 
   // Close button handler
-  const closeBtn = toast.querySelector('.toast-close');
   closeBtn.addEventListener('click', () => {
     removeToast(toast);
   });

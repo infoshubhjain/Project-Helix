@@ -1,7 +1,7 @@
 // Project Helix service worker — offline shell + fresh-when-online event data.
 // Bump on every app-shell change — a stale v1 cache would keep serving an
 // index.html that has no food-resources.js tag.
-const CACHE = 'helix-v3';
+const CACHE = 'helix-v4';
 
 // App shell — cached on install for instant repeat loads and offline use.
 const ASSETS = [
