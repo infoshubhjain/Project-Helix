@@ -229,8 +229,10 @@ class TestCapEvents(unittest.TestCase):
 
     def test_caps_when_over_limit(self):
         events = {i: {"summary": f"E{i}"} for i in range(20)}
-        result = scrape.cap_events(events, 10)
+        with patch("builtins.print") as emit:
+            result = scrape.cap_events(events, 10)
         self.assertEqual(len(result), 10)
+        self.assertIn("::warning title=Event cap hit::", emit.call_args.args[0])
 
     def test_non_dict_returns_empty(self):
         self.assertEqual(scrape.cap_events("bad", 10), {})
