@@ -53,7 +53,7 @@ make scrape-local
 
 GitHub Actions scrapes at 6:07 AM America/Chicago. At 10:07 AM it checks the morning run and retries if it was missing, failed, or reported an empty source.
 
-For an alert when GitHub does not start either run, create a [Healthchecks.io check](https://healthchecks.io/docs/configuring_checks/) with cron `7 6 * * *`, time zone `America/Chicago`, and a grace period of at least 4 hours 30 minutes. Enable its notification email, then add its private ping URL as the repository Actions secret `DAILY_SCRAPER_HEALTHCHECK_URL`. The workflow pings only after a healthy scheduled scrape. Without that secret, external missing-run alerts are inactive.
+An independent macOS LaunchAgent at `~/Library/LaunchAgents/com.infoshubhjain.project-helix-monitor.plist` runs [Project/check_daily_scraper.py](Project/check_daily_scraper.py) at 11:15 AM and on login. It checks GitHub's public workflow runs and sends a desktop notification if no healthy scheduled scrape ran that day. The Mac must be on or asleep and the user logged in; a powered-off Mac cannot alert. Moving this checkout requires updating the path in the LaunchAgent.
 
 To inspect a day manually, open the [Daily Scraper workflow](https://github.com/infoshubhjain/Project-Helix/actions/workflows/scraper.yml) and confirm a scheduled run scraped events; a successful check-only run at 10 AM means the morning scrape was healthy.
 

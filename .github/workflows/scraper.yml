@@ -39,7 +39,6 @@ jobs:
             echo 'go=true' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           today=$(TZ=America/Chicago date +%F)
           morning_run=$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/scraper.yml/runs?event=schedule&per_page=50" 2>/dev/null |
             jq -r --arg day "$today" '.workflow_runs[] | select(.created_at[0:10] == $day and .display_title == "Daily Scraper (7 6 * * *)" and .conclusion == "success") | .id' | head -n 1 || true)
@@ -114,23 +113,3 @@ jobs:
             echo 'The 10 AM recovery scrape still has source warnings; code or upstream repair is needed.'
             exit 1
           fi
-
-      - name: Confirm healthy daily scrape to external monitor
-        if: github.event_name == 'schedule'
-        continue-on-error: true
-        env:
-          HEALTHCHECK_URL: ${{ secrets.DAILY_SCRAPER_HEALTHCHECK_URL }}
-        run: |
-          if [ -z "$HEALTHCHECK_URL" ]; then
-            echo 'External heartbeat is not configured.'
-            exit 0
-          fi
-          if grep -Eq '^::warning title=(Empty scraper source|Event cap hit)::' scraper-output.log; then
-            echo 'Source warning: withholding success heartbeat.'
-            exit 0
-          fi
-          case "$HEALTHCHECK_URL" in
-            https://*) ;;
-            *) echo 'Heartbeat URL must use HTTPS.'; exit 1 ;;
-          esac
-          curl --fail --silent --show-error --max-time 10 --retry 3 --output /dev/null "$HEALTHCHECK_URL"
