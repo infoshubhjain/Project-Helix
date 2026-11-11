@@ -114,3 +114,23 @@ jobs:
             echo 'The 10 AM recovery scrape still has source warnings; code or upstream repair is needed.'
             exit 1
           fi
+
+      - name: Confirm healthy daily scrape to external monitor
+        if: github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          HEALTHCHECK_URL: ${{ secrets.DAILY_SCRAPER_HEALTHCHECK_URL }}
+        run: |
+          if [ -z "$HEALTHCHECK_URL" ]; then
+            echo 'External heartbeat is not configured.'
+            exit 0
+          fi
+          if grep -Eq '^::warning title=(Empty scraper source|Event cap hit)::' scraper-output.log; then
+            echo 'Source warning: withholding success heartbeat.'
+            exit 0
+          fi
+          case "$HEALTHCHECK_URL" in
+            https://*) ;;
+            *) echo 'Heartbeat URL must use HTTPS.'; exit 1 ;;
+          esac
+          curl --fail --silent --show-error --max-time 10 --retry 3 --output /dev/null "$HEALTHCHECK_URL"
