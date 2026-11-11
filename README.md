@@ -49,6 +49,14 @@ To update the event data locally:
 make scrape-local
 ```
 
+### Daily scrape monitoring
+
+GitHub Actions scrapes at 6:07 AM America/Chicago. At 10:07 AM it checks the morning run and retries if it was missing, failed, or reported an empty source.
+
+For an alert when GitHub does not start either run, create a [Healthchecks.io check](https://healthchecks.io/docs/configuring_checks/) with cron `7 6 * * *`, time zone `America/Chicago`, and a grace period of at least 4 hours 30 minutes. Enable its notification email, then add its private ping URL as the repository Actions secret `DAILY_SCRAPER_HEALTHCHECK_URL`. The workflow pings only after a healthy scheduled scrape. Without that secret, external missing-run alerts are inactive.
+
+To inspect a day manually, open the [Daily Scraper workflow](https://github.com/infoshubhjain/Project-Helix/actions/workflows/scraper.yml) and confirm a scheduled run scraped events; a successful check-only run at 10 AM means the morning scrape was healthy.
+
 ## 📜 Technical Details
 
 -   **Languages**: HTML, CSS, JavaScript, Python
