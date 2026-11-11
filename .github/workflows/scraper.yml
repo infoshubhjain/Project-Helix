@@ -94,7 +94,9 @@ jobs:
         run: make test-js
 
       - name: Run Scraper
-        run: python Project/scrape.py
+        run: |
+          set -o pipefail
+          python Project/scrape.py | tee scraper-output.log
 
       - name: Commit and Push Changes
         run: |
@@ -104,3 +106,11 @@ jobs:
           git commit -m "Update scraped events [skip ci]" || exit 0
           git pull --rebase origin main
           git push
+
+      - name: Report unresolved source failures
+        if: github.event_name == 'schedule' && github.event.schedule == '7 10 * * *'
+        run: |
+          if grep -Eq '^::warning title=(Empty scraper source|Event cap hit)::' scraper-output.log; then
+            echo 'The 10 AM recovery scrape still has source warnings; code or upstream repair is needed.'
+            exit 1
+          fi
