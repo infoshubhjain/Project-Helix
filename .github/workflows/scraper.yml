@@ -1,4 +1,5 @@
 name: Daily Scraper
+run-name: Daily Scraper (${{ github.event.schedule || github.event_name }})
 
 on:
   push:
@@ -9,7 +10,9 @@ on:
       - 'Project/requirements.txt'
       - 'tests/test_scrape_smoke.py'
   schedule:
-    - cron: '7 9 * * *'
+    - cron: '7 6 * * *'
+      timezone: America/Chicago
+    - cron: '7 10 * * *'
       timezone: America/Chicago
   workflow_dispatch:      # Allows manual trigger
 
@@ -18,7 +21,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check-morning-run:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      checks: read
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - name: Check whether a scrape is needed
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ "$SCHEDULE" != '7 10 * * *' ]; then
+            echo 'go=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          today=$(TZ=America/Chicago date +%F)
+          morning_run=$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/scraper.yml/runs?event=schedule&per_page=50" 2>/dev/null |
+            jq -r --arg day "$today" '.workflow_runs[] | select(.created_at[0:10] == $day and .display_title == "Daily Scraper (7 6 * * *)" and .conclusion == "success") | .id' | head -n 1 || true)
+          if [ -n "$morning_run" ]; then
+            job_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$morning_run/jobs" 2>/dev/null |
+              jq -r '.jobs[] | select(.name == "scrape-and-update") | .id' | head -n 1 || true)
+            if [ -n "$job_id" ] && gh api "repos/$GITHUB_REPOSITORY/check-runs/$job_id/annotations" > "$RUNNER_TEMP/annotations.json"; then
+              if ! jq -e 'any(.[]; .annotation_level == "warning" and (.title == "Empty scraper source" or .title == "Event cap hit"))' "$RUNNER_TEMP/annotations.json" > /dev/null; then
+                echo 'Morning scrape succeeded with no source warnings.'
+                echo 'go=false' >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+          fi
+          echo 'Morning scrape missing, failed, or warned; running the 10 AM recovery scrape.'
+          echo 'go=true' >> "$GITHUB_OUTPUT"
+
   scrape-and-update:
+    needs: check-morning-run
+    if: needs.check-morning-run.outputs.go == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
