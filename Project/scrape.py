@@ -204,6 +204,17 @@ def create_robust_session() -> requests.Session:
     return session
 
 
+def add_illinois_issuer(session: requests.Session) -> None:
+    """Trust the YR1 intermediate omitted by some Illinois sites, with normal TLS checks."""
+    with tempfile.NamedTemporaryFile("wb", delete=False) as ca_file:
+        with open(certifi.where(), "rb") as roots, open(
+            os.path.join(os.path.dirname(__file__), "music-issuer.pem"), "rb"
+        ) as issuer:
+            ca_file.write(roots.read())
+            ca_file.write(issuer.read())
+        session.verify = ca_file.name
+
+
 def safe_request(
     url: str, session: requests.Session, method: str = "GET", **kwargs
 ) -> Optional[requests.Response]:
@@ -1497,6 +1508,7 @@ def scrape_kam() -> Dict[str, Any]:
     events: Dict[int, Any] = {}
     local_count = 0
     session = create_robust_session()
+    add_illinois_issuer(session)
     TZ = ZoneInfo("America/Chicago")
 
     print("\n🔍 Scraping Krannert Art Museum...")
@@ -1613,6 +1625,8 @@ def scrape_kam() -> Dict[str, Any]:
 
     except Exception as e:
         print(f"   ❌ Error in scrape_kam: {e}")
+    finally:
+        os.unlink(session.verify)
 
     print(f"   ✅ KAM: {local_count} events scraped")
     return events
@@ -1631,14 +1645,8 @@ def scrape_music() -> Dict[str, Any]:
     TZ = ZoneInfo("America/Chicago")
 
     print("\n🔍 Scraping School of Music events...")
-    # shortcut: Music omits its Let's Encrypt YR1 intermediate; remove this when the server serves a full chain.
-    with tempfile.NamedTemporaryFile("wb", delete=False) as ca_file:
-        with open(certifi.where(), "rb") as roots, open(
-            os.path.join(os.path.dirname(__file__), "music-issuer.pem"), "rb"
-        ) as issuer:
-            ca_file.write(roots.read())
-            ca_file.write(issuer.read())
-        session.verify = ca_file.name
+    # Music also omits its Let's Encrypt YR1 intermediate.
+    add_illinois_issuer(session)
     try:
         response = safe_request(MUSIC_EVENTS_LINK, session)
         if not response:
